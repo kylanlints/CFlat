@@ -1,0 +1,100 @@
+{Root}    -> list{[Stmt]}
+
+{Stmt}    -> { int ident = [Expr]
+             | exit([Expr])
+             | [Scope]
+             { if([Expr])[Scope]
+
+{Scope}   -> list{[Stmt]}
+
+{Expr}    -> { [Term]
+             { [BinExpr]
+
+{Term}    -> { int_lit
+             | n_int_lit
+             | ident
+             { [Paren]
+
+{Paren}   -> {[Expr]}
+
+{ExprBin} -> { [Expr] + [Expr]
+             | [Expr] * [Expr]
+             | [Expr] / [Expr]
+             { [Expr] - [Expr]
+
+{If}      -> { [And]
+             | [Or]
+             | [Not]
+             { [IfExpr]
+
+{IfExpr}  -> { [Test]
+             | {Compare}
+             { {IfSet}
+
+{And}     -> { [IfExpr] && [IfExpr] }
+{Or}      -> { [IfExpr] || [IfExpr] }
+{Not}     -> { ![IfExpr] }
+
+// AND
+if (!j && !l) {
+    j1 = false;
+    l1 = false;
+
+    j2 = false;
+    l2 = false;
+} else if (j && !l) {
+    j1 = false;
+    l1 = next;
+
+    j2 = true;
+    l2 = false;
+} else if (!j && l) {
+    j1 = false;
+    l1 = true;
+
+    j2 = false;
+    l2 = true;
+} else if (j && l) {
+    j1 = false;
+    l1 = next;
+    
+    j2 = true;
+    l2 = true;
+}
+
+j1   l1   j2   l2
+0101 0101 0101 0101
+0011 0011 0011 0011
+0000 0212 0101 0011
+
+// Or
+if (!j && !l) {
+    j1 = true;
+    l1 = true;
+
+    j2 = false;
+    l2 = false;
+} else if (j && !l) {
+    j1 = true;
+    l1 = false;
+
+    j2 = true;
+    l2 = false;
+} else if (!j && l) {
+    j1 = true;
+    l1 = next;
+
+    j2 = false;
+    l2 = true;
+} else if (j && l) {
+    j1 = true;
+    l1 = true;
+
+    j2 = true;
+    l2 = true;
+}
+
+j1   l1   j2   l2
+0101 0101 0101 0101
+0011 0011 0011 0011
+1111 1021 0101 0011

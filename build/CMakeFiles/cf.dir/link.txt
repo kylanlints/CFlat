@@ -1,0 +1,1 @@
+/usr/bin/g++ -g CMakeFiles/cf.dir/src/main.cpp.o -o cf 

@@ -1,0 +1,6 @@
+/root/Prog/CFlat/build/CMakeFiles/cf.dir
+/root/Prog/CFlat/build/CMakeFiles/edit_cache.dir
+/root/Prog/CFlat/build/CMakeFiles/rebuild_cache.dir
+/root/Prog/CFlat/build/include/CMakeFiles/fmt.dir
+/root/Prog/CFlat/build/include/CMakeFiles/edit_cache.dir
+/root/Prog/CFlat/build/include/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libfmt.a 
+/usr/bin/ranlib libfmt.a
