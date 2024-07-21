@@ -11,6 +11,8 @@ _start:
     mov rdx, len
     syscall
 
+    ucomiss xmm0, xmm1
+
     mov rax, 60
     mov rdi, rax
     syscall

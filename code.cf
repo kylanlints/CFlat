@@ -1,14 +1,27 @@
-{ // comment
+{// comment
     float x = 1;
+    float y = 2;
     if ((x + 1) == (x - 1)) {
          x = 5;
     }
 
+    int zz = 118837123;
 
-    //float y = 2;
-    //{
-    //    if (y + 1 == y - 1) {
-    //        y = 2;
-    //    }
-    //}
+    if (x >= y) {
+        x = -1;
+    }
+
+    int zzz = 11;
+
+    if (x >= y || x < y) {
+        x = 192019;
+    }
+
+
+    float y = 2;
+    {
+        if (y + 1 == y - 1) {
+            y = 2;
+        }
+    }
 }

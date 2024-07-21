@@ -47,7 +47,20 @@
         "streambuf": "cpp",
         "typeinfo": "cpp",
         "optional": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "bitset": "cpp",
+        "chrono": "cpp",
+        "codecvt": "cpp",
+        "cstring": "cpp",
+        "ctime": "cpp",
+        "set": "cpp",
+        "ratio": "cpp",
+        "source_location": "cpp",
+        "iomanip": "cpp",
+        "semaphore": "cpp",
+        "stop_token": "cpp",
+        "thread": "cpp",
+        "variant": "cpp"
     },
     "cmake.debugConfig": {
         "args": [

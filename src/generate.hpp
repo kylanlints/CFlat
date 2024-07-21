@@ -22,7 +22,6 @@
 
 enum class VarSize {BYTE, WORD, DWORD, QWORD};
 enum class OpType {SINT, INT, SLONG, LONG, FLOAT, DOUBLE};
-enum class ConditionType {EQU, NOT_EQU, LESS, OTHER};
 
 const std::string QWORDS[] = QWORD_REGS;
 const std::string DWORDS[] = DWORD_REGS;
@@ -118,16 +117,58 @@ public:
     inline void pop(const std::string reg) {
         m_output << "  pop " << reg << "\n";
     }
+
+    template <typename T>
+    inline void gen_standard_comparison(const T* comp, bool rh_first, ExprInf& prefix, std::string cmp_mem_or_reg) {
+        m_output << get_cmp_op(prefix.opType, false) + cmp_mem_or_reg + ", ";
+        if (!rh_first) {
+            gen_term(std::get<NodeTerm*>(comp->rh->var), empty);
+        } else {
+            m_output << get_last_reg(prefix.opType) + '\n';
+        }
+    }
+    
+    template<typename T>
+    inline std::string get_lh_if_comp(const T* comp, ExprInf& prefix) {
+        if (comp->lh_ident && !comp->rh_ident) {
+                return ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
+            } else {
+                gen_expr(comp->lh, prefix);
+                return get_before_comma(get_a_reg(prefix.opType));
+            }
+    }
+
+    template <typename T>
+    inline std::string get_lh_if_comp_no_rh(const T* comp, ExprInf& prefix) {
+        if (comp->lh_ident) {
+            return ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
+        } else {
+            gen_expr(comp->lh, prefix);
+            return get_before_comma(get_a_reg(prefix.opType));
+        }
+    }
+
     //!
     //TODO: Add if statements that return numbers
     template <typename T>
-    inline void gen_if_compare_expr(const T* comp, bool rh_first, ConditionType type, ExprInf& prefix, std::string false_op, std::string true_op) {
+    inline void gen_if_compare_expr(const T* comp, bool rh_first, ExprInf& prefix, std::string false_op, std::string true_op) {
         std::string cmp_mem_or_reg;
-        if (comp->lh_ident_rh_not) {
-            cmp_mem_or_reg = ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
+        if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu> ||
+                        std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
+            if (prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) {
+                cmp_mem_or_reg = get_lh_if_comp_no_rh(comp, prefix);
+            } else {
+                if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu>) {
+                    cmp_mem_or_reg = get_lh_if_comp(comp, prefix);
+                } else {
+                    cmp_mem_or_reg = get_lh_if_comp_no_rh(comp, prefix);
+                }
+            }
+        } else if constexpr (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareNotEqu> ||
+                                std::is_same_v<T, NodeExprLogCompareGreater> || std::is_same_v<T, NodeExprLogCompareGreaterEqu>) {
+            cmp_mem_or_reg = get_lh_if_comp(comp, prefix);
         } else {
-            gen_expr(comp->lh, prefix);
-            cmp_mem_or_reg = get_before_comma(get_a_reg(prefix.opType)); //if_stmts are forced to use a_reg to make things easier
+            cmp_mem_or_reg = get_lh_if_comp_no_rh(comp, prefix);
         }
 
         std::string jump_stmt = prefix.if_inf.jump ? true_op : false_op;
@@ -147,45 +188,52 @@ public:
         }
 
         if (prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) {
-            size_t parity_jump;
-            std::string parity_jump_stmt = prefix.if_inf.jump ? "  jnp" : "  jp"; //I'm not sure if this is right
-            std::string parity_label_ident;
-            if (m_encapsulated_if > 1) {
-                parity_jump = m_extra_label_cnt;
-                parity_label_ident = " .EL";
-                if (prefix.if_inf.label < 2) {
-                    m_use_extra_label++;
+            if (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareEquByPar>) {
+                size_t parity_jump;
+                std::string parity_jump_stmt = prefix.if_inf.jump ? "  jnp" : "  jp"; //I'm not sure if this is right
+                std::string parity_label_ident;
+                if (m_encapsulated_if > 1) {
+                    parity_jump = m_extra_label_cnt;
+                    parity_label_ident = " .EL";
+                    if (prefix.if_inf.label < 2) {
+                        m_use_extra_label++;
+                    }
+                } else {
+                    parity_jump = m_label_cnt_2;
+                    parity_label_ident = " .L";
+                } 
+                
+                // jump if parity tests for NaN state which is set to false (PF isn't fully useless!)
+                m_output << get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + ", ";
+                if (!rh_first) {
+                    gen_term(std::get<NodeTerm*>(comp->rh->var), empty);
+                    m_output << parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + '\n' + \
+                        get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + ", ";
+                    gen_term(std::get<NodeTerm*>(comp->rh->var), empty);
+                } else {
+                    m_output << get_last_reg(prefix.opType) + '\n' + parity_jump_stmt + parity_label_ident + \
+                        std::to_string(parity_jump) + '\n' + get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + \
+                        ',' + get_last_reg(prefix.opType) + '\n';
                 }
             } else {
-                parity_jump = m_label_cnt_2;
-                parity_label_ident = " .L";
+                if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu> ||
+                                std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
+                    if (!rh_first) {
+                        std::string prev = prefix.reg;
+                        std::string next_reg = ' ' + get_next_reg(prefix.opType);
+                        prefix.reg = next_reg + ", ";
+                        gen_term(std::get<NodeTerm*>(comp->rh->var), prefix);
+                        prefix.reg = prev;
+                        m_output << get_cmp_op(prefix.opType, false) + next_reg + ',' + cmp_mem_or_reg + '\n';
+                    } else {
+                        m_output << get_cmp_op(prefix.opType, false) + get_last_reg(prefix.opType) + ',' + cmp_mem_or_reg + '\n';
+                    }
+                } else {
+                    gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
+                }
             }
-            // !
-            if (!rh_first) {
-                gen_term(std::get<NodeTerm*>(comp->rh->var), empty);
-                // !
-                // !
-                // !/
-                // ! Bad
-                // ! bad
-                // ! fix/
-                // ! p[lease]
-            } else {
-                m_output << get_last_reg(prefix.opType) + '\n';
-            }
-            // jump if parity tests for NaN state which is set to false (PF isn't fully useless!)
-            m_output << get_cmp_op(prefix.opType) + ' ' + next_reg + ',' + cmp_mem_or_reg + \
-                '\n' + parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + '\n';
-            prefix.reg = prev;
-            m_output << get_cmp_op(prefix.opType) + \
-                ' ' + next_reg + ',' + cmp_mem_or_reg + '\n';
         } else {
-            m_output << get_cmp_op(prefix.opType) + cmp_mem_or_reg + ", ";
-            if (!rh_first) {
-                gen_term(std::get<NodeTerm*>(comp->rh->var), empty);
-            } else {
-                m_output << get_last_reg(prefix.opType) + '\n';
-            }
+            gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
         }
 
         m_output << jump_stmt + label_ident + std::to_string(label) + '\n';
@@ -1050,11 +1098,11 @@ public:
                 }
 
                 // jump if parity tests for NaN state which is set to false (PF isn't fully useless!)
-                main.m_output << "  xorps " + next_reg + ", " + next_reg + '\n' + main.get_cmp_op(prefix.opType) + ' ' + next_reg + ',' + cmp_mem_or_reg + \
-                    '\n' + parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + "\n  xorps " + next_reg + ", " + next_reg + '\n' + main.get_cmp_op(prefix.opType) + \
+                main.m_output << "  xorps " + next_reg + ", " + next_reg + '\n' + main.get_cmp_op(prefix.opType, false) + ' ' + next_reg + ',' + cmp_mem_or_reg + \
+                    '\n' + parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + "\n  xorps " + next_reg + ", " + next_reg + '\n' + main.get_cmp_op(prefix.opType, false) + \
                     ' ' + next_reg + ',' + cmp_mem_or_reg + '\n';
             } else if (test->ident) {
-                main.m_output << main.get_cmp_op(prefix.opType) + ' ' + 
+                main.m_output << main.get_cmp_op(prefix.opType, false) + ' ' + 
                     main.get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(test->expr->var)->var)->ident, prefix) + ", 0\n";
             } else {
                 main.gen_expr(test->expr, prefix);
@@ -1070,19 +1118,19 @@ public:
             main.gen_if_compare_expr<NodeExprLogCompareNotEqu>(not_equ, false, prefix, "  je", "  jne");
         }
         void gen(const NodeExprLogCompareGreater* greater, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jb", "  jae");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jnbe", "  jbe");
             main.gen_if_compare_expr<NodeExprLogCompareGreater>(greater, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareGreaterEqu* greater_equ, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jbe", "  ja");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jnb", "  jb");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterEqu>(greater_equ, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareLess* less, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  ja", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  jnbe", "  jbe");
             main.gen_if_compare_expr<NodeExprLogCompareLess>(less, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareLessEqu* less_equ, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jae", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jnb", "  jb");
             main.gen_if_compare_expr<NodeExprLogCompareLessEqu>(less_equ, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareEquByPar* equ, ExprInf& prefix) {
@@ -1097,25 +1145,25 @@ public:
         }
         void gen(const NodeExprLogCompareGreaterByPar* greater, ExprInf& prefix) {
             main.gen_paren_start(greater, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jb", "  jae");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jnbe", "  jbe");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterByPar>(greater, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareGreaterEquByPar* greater_equ, ExprInf& prefix) {
             main.gen_paren_start(greater_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jbe", "  ja");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jnb", "  jb");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterEquByPar>(greater_equ, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareLessByPar* less, ExprInf& prefix) {
             main.gen_paren_start(less, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  ja", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  jnbe", "  jbe");
             main.gen_if_compare_expr<NodeExprLogCompareLessByPar>(less, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareLessEquByPar* less_equ, ExprInf& prefix) {
             main.gen_paren_start(less_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jae", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jnb", "  jb");
             main.gen_if_compare_expr<NodeExprLogCompareLessEquByPar>(less_equ, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }

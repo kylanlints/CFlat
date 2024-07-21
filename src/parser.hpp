@@ -270,49 +270,55 @@ struct NodeExprLogCompareEqu {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;
 };
 
 struct NodeExprLogCompareNotEqu {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;
 };
 
 struct NodeExprLogCompareGreater {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;
 };
 
 struct NodeExprLogCompareLess {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;;
 };
 
 struct NodeExprLogCompareGreaterEqu {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;
 };
 
 struct NodeExprLogCompareLessEqu {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
+    bool rh_ident;
 };
 
 struct NodeExprLogCompareEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -320,7 +326,7 @@ struct NodeExprLogCompareNotEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -328,7 +334,7 @@ struct NodeExprLogCompareGreaterByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -336,7 +342,7 @@ struct NodeExprLogCompareLessByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -344,7 +350,7 @@ struct NodeExprLogCompareGreaterEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -352,7 +358,7 @@ struct NodeExprLogCompareLessEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
     bool num_result = false;
-    bool lh_ident_rh_not = false;
+    bool lh_ident;
     long last_areg_op;
 };
 
@@ -1628,9 +1634,10 @@ public:
         if constexpr (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareNotEqu> ||
                         std::is_same_v<T, NodeExprLogCompareGreater> || std::is_same_v<T, NodeExprLogCompareGreaterEqu> ||
                         std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu>) {
-            operation->lh_ident_rh_not = (lh_elem == ExprElementType::MEMORY) && (rh_elem == ExprElementType::IMMEDIATE);
+            operation->lh_ident = (lh_elem == ExprElementType::MEMORY);
+            operation->rh_ident = (rh_elem == ExprElementType::MEMORY);
         } else {
-            operation->lh_ident_rh_not = (lh_elem == ExprElementType::MEMORY); //!Update lh_used_parens_here
+            operation->lh_ident = (lh_elem == ExprElementType::MEMORY); //!Update lh_used_parens_here
             operation->last_areg_op = get_last_areg_amt();
             m_last_main_reg_ops.pop_back();
         }
