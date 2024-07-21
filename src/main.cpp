@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
 
     if(!parser.successful)
     {
-        std::cout << "Was not successful" << std::endl;
+        std::cout << "\033[1;31mWas not successful\033[0;37m" << std::endl;
 
         auto end_time = std::chrono::high_resolution_clock::now();
         

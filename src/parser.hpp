@@ -475,6 +475,7 @@ private:
     int m_lock_main_reg = 0;
     ExprElementType m_left_element;
     ExprElementType m_right_element;
+    bool m_used_explicit_paren = false;
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
     Variable m_decided_type;
@@ -1281,10 +1282,14 @@ public:
                     error("Bad operator or missing semicolon");
                     return std::nullopt;
                 }
+                if (!full_expr) { // Necessary for too big imm
+                    return expr;
+                }
                 break;
-            } else if (min_prec > 0) {
+            } else if (min_prec > 0 && !full_expr && !m_used_explicit_paren) {
                 m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
             }
+            m_used_explicit_paren = false;
 
             if (prec < min_prec) {
                 m_right_element = element_type;
@@ -1872,6 +1877,8 @@ public:
                 // if a communitive operation expression was flipped then m_used_regs_ctr will stay the same
                 update_extra_space(m_used_regs_ctr);
                 m_used_regs_ctr = prev_used_regs_ctr;
+
+                m_used_explicit_paren = true;
                 
                 element_type = ExprElementType::PAREN;
                 paren->expr = paren_expr.value();

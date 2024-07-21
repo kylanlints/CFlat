@@ -1,6 +1,12 @@
 {// comment
     long x = 15;
-    x = x * 4 * 2 + 2 + 8;
+    long y = 181238019231;
+    x = 99 - y * (y / x) * x;
+    double z = 55;
+    double z1 = 55;
+    if (z != z1 || z < 50) {
+        exit(14);
+    }
     if (x + 1) {
         x = x + 1;
     } else {

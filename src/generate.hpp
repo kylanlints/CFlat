@@ -1353,7 +1353,7 @@ private:
             case OpType::FLOAT:
                 return equ ? "  ucomiss" : "  comiss";
             case OpType::DOUBLE:
-                return equ ? "  ucomisd" : "  comiss";
+                return equ ? "  ucomisd" : "  comisd";
             default:
                 return "  cmp";
         }
