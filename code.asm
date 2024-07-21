@@ -1,6 +1,6 @@
 section .data
 section .rodata
-  FI0  dq  4632233691727265792
+  FI0  dq  -4502725890764963840
 section .bss
 section .text
 global _start
@@ -24,16 +24,15 @@ _start:
   mov rax, 4632937379169042432
   mov QWORD [rbp-0], rax
   movsd xmm0, QWORD [rbp-8]
-  comisd xmm0, QWORD [rbp-0]
-  jne .L1
+  ucomisd xmm0, QWORD [rbp-0]
+  jnp .L0
+  ucomisd xmm0, QWORD [rbp-0]
+  je .L1
   movsd xmm1, QWORD [FI0]
   comisd xmm1, QWORD [rbp-8]
   jbe .L0
 .L1:
-  mov rax, 14
-  mov rdi, rax
-  mov rax, 60
-  syscall
+  mov QWORD [rbp-24], 27
 .L0:
   mov rax, QWORD [rbp-24]
   add rax, 1

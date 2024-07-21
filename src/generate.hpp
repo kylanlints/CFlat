@@ -190,7 +190,7 @@ public:
         if (prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) {
             if (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareEquByPar>) {
                 size_t parity_jump;
-                std::string parity_jump_stmt = prefix.if_inf.jump ? "  jnp" : "  jp"; //I'm not sure if this is right
+                std::string parity_jump_stmt = "  jp";
                 std::string parity_label_ident;
                 if (m_encapsulated_if > 1) {
                     parity_jump = m_extra_label_cnt;
