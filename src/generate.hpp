@@ -192,7 +192,11 @@ public:
                 size_t parity_jump;
                 std::string parity_jump_stmt = "  jp";
                 std::string parity_label_ident;
-                if (m_encapsulated_if > 1) {
+                if (m_encapsulated_if_or > 0) {
+                    parity_jump = m_extra_label_cnt;
+                    parity_label_ident = " .EL";
+                    m_use_mid_or_label++;
+                } else if (m_encapsulated_if > 1) {
                     parity_jump = m_extra_label_cnt;
                     parity_label_ident = " .EL";
                     if (prefix.if_inf.label < 2) {
@@ -1205,6 +1209,7 @@ public:
                                     (prefix.if_inf.label == 1) * (main.m_encapsulated_if);
             bool reset_parity_jump = !main.m_encapsulated_if;
             main.m_encapsulated_if++;
+            main.m_encapsulated_if_or++;
             main.gen_expr(_or->lh, prefix);
             
             prefix.if_inf.jump = orig_jump;
@@ -1212,10 +1217,17 @@ public:
             if (reset_parity_jump) {
                 main.m_encapsulated_if = 0;
             }
-            main.gen_expr(_or->rh, prefix);
-            if (main.m_use_extra_label) {
+            main.m_encapsulated_if_or--;
+            if (main.m_use_mid_or_label) {
                 main.add_extra_label();
-                main.m_use_extra_label--;
+                main.m_use_mid_or_label--;
+                main.gen_expr(_or->rh, prefix);
+            } else {
+                main.gen_expr(_or->rh, prefix);
+                if (main.m_use_extra_label) {
+                    main.add_extra_label();
+                    main.m_use_extra_label--;
+                }
             }
         }
     };
@@ -1271,7 +1283,9 @@ private:
     size_t m_label_backtrack = 0;
     bool m_use_truth_label = false;
     size_t m_use_extra_label = 0;
+    size_t m_use_mid_or_label = 0;
     size_t m_encapsulated_if = 0;
+    size_t m_encapsulated_if_or = 0;
     u_int8_t m_used_regs = 0;
     signed char m_last_mem_sign = 1;
     u_int32_t m_o_rax = 0;

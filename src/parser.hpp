@@ -681,7 +681,7 @@ private:
                     }
                 }
                 default:
-                    error("Something went wrong");
+                    error("Something went wrong with getting int token");
                     return std::nullopt;
             }
         } catch (std::out_of_range) {
@@ -1242,7 +1242,7 @@ public:
         is_cur_expr_single = true;
         m_elem_used_test = false;
         m_expr_pos = 0;
-        m_last_main_reg_ops.assign({{0, 0}});
+        m_last_main_reg_ops.assign({{0, 0}}); //TODO: check situations to make sure vars like m_used_regs are reset with each statement
 
         return stmt;
     }
@@ -1760,7 +1760,7 @@ public:
                     }
                 } else if (allowed_type == VarType::FLOAT) {
                     int_lit = invoke_parse_int_lit<float>(allowed_type, op_type, token.value());
-                } else if (m_cur_var_type == VarType::DOUBLE) {
+                } else if (allowed_type == VarType::DOUBLE) {
                     int_lit = invoke_parse_int_lit<double>(allowed_type, op_type, token.value());
                 } else if (allowed_type == VarType::INT_16) {
                     if (is_signed) {
@@ -1775,7 +1775,7 @@ public:
                         int_lit = invoke_parse_int_lit<unsigned char>(allowed_type, op_type, token.value());
                     }
                 } else {
-                    error("Something went wrong");
+                    error("Something went wrong with start getting int token");
                     return std::nullopt;
                 }
                 if (!int_lit.has_value()) {
@@ -1838,6 +1838,7 @@ public:
                         error("Unaccepted type");
                     } else {
                         allowed_type = var.type;
+                        m_cur_var_type = allowed_type;
                         m_decided_type.type = allowed_type;
                         m_decided_type.is_signed = var.is_signed;
                     }
@@ -2312,7 +2313,7 @@ public:
                                 break;
                             }
                             default:
-                                error("Something went wrong");
+                                error("Something went wrong with parsing constexpr");
                                 return std::nullopt;
                         }
                     }
