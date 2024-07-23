@@ -182,8 +182,9 @@ public:
                 cmp_mem_or_reg = get_lh_if_comp_no_rh(comp, prefix);
             }
         }
-
-        std::string jump_stmt = prefix.if_inf.jump ? true_op : false_op;
+        
+        std::string set_stmt;
+        std::string jump_stmt = prefix.if_inf.jump & ~comp->num_result ? "  j" + true_op : "  j" + false_op;
         std::string label_ident;
         size_t label;
         if (prefix.if_inf.label >= 2) {
@@ -1127,58 +1128,58 @@ public:
             main.m_output << jump_stmt + label_ident + std::to_string(label) + '\n';
         }
         void gen(const NodeExprLogCompareEqu* equ, ExprInf& prefix) {
-            main.gen_if_compare_expr<NodeExprLogCompareEqu>(equ, false, prefix, "  jne", "  je");
+            main.gen_if_compare_expr<NodeExprLogCompareEqu>(equ, false, prefix, "ne", "e");
         }
         void gen(const NodeExprLogCompareNotEqu* not_equ, ExprInf& prefix) {
-            main.gen_if_compare_expr<NodeExprLogCompareNotEqu>(not_equ, false, prefix, "  je", "  jne");
+            main.gen_if_compare_expr<NodeExprLogCompareNotEqu>(not_equ, false, prefix, "e", "ne");
         }
         void gen(const NodeExprLogCompareGreater* greater, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jnbe", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "le", "g", "be", "a", "nbe", "be");
             main.gen_if_compare_expr<NodeExprLogCompareGreater>(greater, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareGreaterEqu* greater_equ, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jnb", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "l", "ge", "b", "ae", "nb", "b");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterEqu>(greater_equ, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareLess* less, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  jnbe", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "ge", "l", "ae", "b", "nbe", "be");
             main.gen_if_compare_expr<NodeExprLogCompareLess>(less, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareLessEqu* less_equ, ExprInf& prefix) {
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jnb", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "g", "le", "a", "be", "nb", "b");
             main.gen_if_compare_expr<NodeExprLogCompareLessEqu>(less_equ, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareEquByPar* equ, ExprInf& prefix) {
             main.gen_paren_start(equ, prefix);
-            main.gen_if_compare_expr<NodeExprLogCompareEquByPar>(equ, true, prefix, "  jne", "  je");
+            main.gen_if_compare_expr<NodeExprLogCompareEquByPar>(equ, true, prefix, "ne", "e");
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareNotEquByPar* not_equ, ExprInf& prefix) {
             main.gen_paren_start(not_equ, prefix);
-            main.gen_if_compare_expr<NodeExprLogCompareNotEquByPar>(not_equ, true, prefix, "  je", "  jne");
+            main.gen_if_compare_expr<NodeExprLogCompareNotEquByPar>(not_equ, true, prefix, "e", "ne");
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareGreaterByPar* greater, ExprInf& prefix) {
             main.gen_paren_start(greater, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jle", "  jg", "  jbe", "  ja", "  jnbe", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "le", "g", "be", "a", "nbe", "be");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterByPar>(greater, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareGreaterEquByPar* greater_equ, ExprInf& prefix) {
             main.gen_paren_start(greater_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jl", "  jge", "  jb", "  jae", "  jnb", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "l", "ge", "b", "ae", "nb", "b");
             main.gen_if_compare_expr<NodeExprLogCompareGreaterEquByPar>(greater_equ, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareLessByPar* less, ExprInf& prefix) {
             main.gen_paren_start(less, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jge", "  jl", "  jae", "  jb", "  jnbe", "  jbe");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "ge", "l", "ae", "b", "nbe", "be");
             main.gen_if_compare_expr<NodeExprLogCompareLessByPar>(less, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
         void gen(const NodeExprLogCompareLessEquByPar* less_equ, ExprInf& prefix) {
             main.gen_paren_start(less_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "  jg", "  jle", "  ja", "  jbe", "  jnb", "  jb");
+            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "g", "le", "a", "be", "nb", "b");
             main.gen_if_compare_expr<NodeExprLogCompareLessEquByPar>(less_equ, true, prefix, ops.first, ops.second);
             main.m_used_regs--;
         }
