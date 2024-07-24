@@ -10,7 +10,13 @@ _start:
   push rbp
   mov rbp, rsp
 ;s
-  mov QWORD [rbp-16], 7
+  mov QWORD [rbp-24], 7
+;s
+  mov QWORD [rbp-16], 8
+;s
+  cmp QWORD [rbp-24], 8
+  sete al
+  mov QWORD [rbp-16], rax
 ;s
   mov rax, 4632937379169042432
   mov QWORD [rbp-8], rax
@@ -42,7 +48,7 @@ _start:
 .L4:
 ;s
 ;s
-  mov QWORD [rbp-16], 6
+  mov QWORD [rbp-24], 6
 .L3:
 ;s
   movsd xmm0, QWORD [rbp-8]
@@ -62,10 +68,10 @@ _start:
   jbe .L6
 ;s
 ;s
-  mov QWORD [rbp-16], 27
+  mov QWORD [rbp-24], 27
 .L6:
 ;s
-  mov rax, QWORD [rbp-16]
+  mov rax, QWORD [rbp-24]
   mov rdi, rax
   mov rax, 60
   syscall

@@ -484,6 +484,7 @@ private:
     bool m_used_explicit_paren = false;
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
+    bool m_in_if_stmt = false;
     Variable m_decided_type;
     bool m_last_imm_truth;
     std::vector<NodeExprTwoPart*> m_two_part_expr;
@@ -1133,7 +1134,8 @@ public:
                 if (!expect(TokenType::O_PAREN, "Expected open parenthesis")) {
                     return std::nullopt;
                 }
-
+                
+                m_in_if_stmt = true;
                 m_use_if_test = true;
 
                 std::optional<NodeExpr*> if_expr = parseExpr(VarType::UNKNOWN);
@@ -1144,6 +1146,7 @@ public:
                 add_if_test(if_expr.value(), m_right_element);
 
                 m_use_if_test = false;
+                m_in_if_stmt = false;
 
                 if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
                     return std::nullopt;
@@ -1659,7 +1662,8 @@ public:
             operation->last_areg_op = get_last_areg_amt();
             m_last_main_reg_ops.pop_back();
         }
-
+        
+        operation->num_result = !m_in_if_stmt;
         m_elem_used_test = true;
         log_expr->var = operation;
         return log_expr;

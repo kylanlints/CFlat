@@ -187,7 +187,11 @@ public:
         std::string jump_stmt = prefix.if_inf.jump & ~comp->num_result ? "  j" + true_op : "  j" + false_op;
         std::string label_ident;
         size_t label;
-        if (prefix.if_inf.label >= 2) {
+        if (comp->num_result) {
+            label = m_extra_label_cnt;
+            label_ident = " .FL";
+            set_stmt = "  set" + true_op;
+        } else if (prefix.if_inf.label >= 2) {
             label = m_extra_label_cnt + prefix.if_inf.label - 2;
             label_ident = " .EL";
             m_use_extra_label++;
@@ -255,8 +259,12 @@ public:
         } else {
             gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
         }
-
-        m_output << jump_stmt + label_ident + std::to_string(label) + '\n';
+        
+        if (!comp->num_result) {
+            m_output << jump_stmt + label_ident + std::to_string(label) + '\n';
+        } else {
+            m_output << set_stmt + " al\n";    
+        }
     }
 
     // returns true if it successfully generated assembly

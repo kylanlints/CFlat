@@ -1,5 +1,7 @@
 {// comment
     long x = 7;
+    long y = 8;
+    y = x == 8;
     double z = 55;
     double z1 = 55;
     if (z < 50009809.28372893) {
