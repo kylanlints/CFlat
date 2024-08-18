@@ -1,76 +1,62 @@
 section .data
 section .rodata
-  FI0  dq  4721981012836684716
-  FI1  dq  -4502725890764963840
+  FI0  dd  1090519040
+  FI1  dd  1065353216
+  FI2  dd  1091567616
+  FI3  dd  1088421888
 section .bss
 section .text
 global _start
 _start:
-;s
   push rbp
   mov rbp, rsp
-;s
   mov QWORD [rbp-24], 7
-;s
-  mov QWORD [rbp-16], 8
-;s
-  cmp QWORD [rbp-24], 8
-  sete al
-  mov QWORD [rbp-16], rax
-;s
+  mov DWORD [rbp-20], 1090519040
+  mov DWORD [rbp-16], 1065353216
+  movss xmm0, DWORD [rbp-20]
+  ucomiss xmm0, DWORD [FI0]
+  jp .FL0
+  jne .FL0
+  movss xmm0, DWORD [FI1]
+.FL1:
+  ucomiss xmm0, DWORD [rbp-20]
+  jp .FL2
+  jne .FL2
+  movss xmm0, DWORD [FI1]
+.FL3:
+  movss DWORD [rbp-20], xmm0
+  movss xmm0, DWORD [rbp-20]
+  ucomiss xmm0, DWORD [FI2]
+  setp al
+  mov edx, 1
+  cmovne eax, edx
+  movss xmm0, DWORD [rbp-20]
+  ucomiss xmm0, DWORD [FI3]
+  setnp dl
+  mov ecx, 0
+  cmovne edx, ecx
+  xor eax, edx
+  movzx eax, al
+  xorps xmm0, xmm0
+  cvtsi2ss xmm0, eax
+  movss DWORD [rbp-20], xmm0
   mov rax, 4632937379169042432
   mov QWORD [rbp-8], rax
-;s
   mov rax, 4632937379169042432
   mov QWORD [rbp-0], rax
-;s
-  movsd xmm1, QWORD [FI0]
-  comisd xmm1, QWORD [rbp-8]
-  jbe .L0
-;s
-;s
-  mov rax, 4632937379169042432
-  mov QWORD [rbp-8], rax
+  cmp QWORD [rbp-24], 8
+  sete al
+  movzx eax, al
+  cmp rax, QWORD [rbp-24]
+  jne .L0
+  cmp QWORD [rbp-24], 8
+  sete al
+  movzx eax, al
+  cmp rax, QWORD [rbp-24]
+  sete al
+  movzx eax, al
+  mov QWORD [rbp-24], rax
 .L0:
-;s
-  movsd xmm0, QWORD [rbp-8]
-  ucomisd xmm0, QWORD [rbp-0]
-  jp .EL0
-  ucomisd xmm0, QWORD [rbp-0]
-  je .L4
-.EL0:
-  movsd xmm1, QWORD [FI1]
-  comisd xmm1, QWORD [rbp-8]
-  jnbe .L4
-  movsd xmm0, QWORD [rbp-8]
-  comisd xmm0, QWORD [FI0]
-  jbe .L3
-.L4:
-;s
-;s
-  mov QWORD [rbp-24], 6
-.L3:
-;s
-  movsd xmm0, QWORD [rbp-8]
-  ucomisd xmm0, QWORD [rbp-0]
-  jp .EL1
-  ucomisd xmm0, QWORD [rbp-0]
-  je .EL2
-.EL1:
-  movsd xmm0, QWORD [rbp-8]
-  ucomisd xmm0, QWORD [FI1]
-  jp .L6
-  ucomisd xmm0, QWORD [FI1]
-  jne .L6
-.EL2:
-  movsd xmm0, QWORD [rbp-8]
-  comisd xmm0, QWORD [FI0]
-  jbe .L6
-;s
-;s
-  mov QWORD [rbp-24], 27
-.L6:
-;s
   mov rax, QWORD [rbp-24]
   mov rdi, rax
   mov rax, 60
@@ -79,3 +65,9 @@ _start:
   mov rax, 60
   xor rdi, rdi
   syscall
+.FL0:
+  xorps xmm0, xmm0
+  jmp .FL1
+.FL2:
+  xorps xmm0, xmm0
+  jmp .FL3

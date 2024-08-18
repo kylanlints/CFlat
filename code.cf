@@ -1,18 +1,26 @@
 {// comment
     long x = 7;
-    long y = 8;
-    y = x == 8;
+    float y = 8;
+    //long xloveyou = y / (y * 3);
+    //long ahsdfahslkdjfasdf = 88 * y - 2;
+    float hello = 1;
+    //float hii = 2;
+    //hii = hello == 2;
+    //if (hello == hii) {
+    //    x = 3;
+    //}
+    //if ((hello == 2) == 3) { //Bad
+    //   x = 2;
+    //}
+    //ahsdfahslkdjfasdf = ahsdfahslkdjfasdf / 5;
+    //exit(ahsdfahslkdjfasdf);
+    y = y == (y == 8); //Broken less
+    y = (y == 9) == (y == 7);
     double z = 55;
     double z1 = 55;
-    if (z < 50009809.28372893) {
-        z = 55;
-    }
-    if ((z == z1 || z < -120192831/3) || z > 50009809.28372893) { 
-       x = 6;
-    }
-    if ((z == z1 || z == -120192831/3) && z > 50009809.28372893) { 
-        x = 27;
-    }
+    if ((x == 8) == x) {
+        x = (x == 8) == x;
+    } 
     exit(x);
 }
 

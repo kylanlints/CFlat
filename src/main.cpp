@@ -35,7 +35,7 @@ int main(int argc, char* argv[])
     Parser parser(std::move(tokens));
     NodeRoot root = parser.ParseProgram();
 
-    if(!parser.successful)
+    if (!parser.successful)
     {
         std::cout << "\033[1;31mWas not successful\033[0;37m" << std::endl;
 

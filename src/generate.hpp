@@ -66,6 +66,7 @@ public:
     std::stringstream m_section_data;
     std::stringstream m_section_rodata;
     std::stringstream m_section_bss;
+    std::stringstream m_output_end;
 
     inline explicit Generator(const NodeRoot root)
         : m_root(std::move(root))
@@ -83,13 +84,12 @@ public:
             gen_stmt(stmt);
         }
 
-        m_output << "  mov rax, 60\n  xor rdi, rdi\n  syscall"; //exit with 0 if no previous exit statement
+        m_output << "  mov rax, 60\n  xor rdi, rdi\n  syscall\n"; //exit with 0 if no previous exit statement
 
-        return (m_section_data.str() + m_section_rodata.str() + m_section_bss.str() + m_output.str());
+        return (m_section_data.str() + m_section_rodata.str() + m_section_bss.str() + m_output.str() + m_output_end.str());
     }
 
     const inline void gen_stmt(const NodeStmt* stmt, bool last = false) {
-        m_output << ";s\n";
         std::visit([this, &last](auto&& arg) {stmt_Generator.gen(arg, last);}, stmt->stmt);
     }
 
@@ -125,13 +125,56 @@ public:
     }
 
     template <typename T>
-    inline void gen_standard_comparison(const T* comp, bool rh_first, ExprInf& prefix, std::string cmp_mem_or_reg) {
-        m_output << get_cmp_op(prefix.opType, false) + cmp_mem_or_reg + ", ";
+    inline void gen_standard_comparison(const T* comp, bool rh_first, ExprInf& prefix, const std::string cmp_mem_or_reg) {
         if (!rh_first) {
+            m_output << get_cmp_op(prefix.opType, false) + cmp_mem_or_reg + ", ";
             gen_empty_term(std::get<NodeTerm*>(comp->rh->var), prefix.opType);
         } else {
+            m_output << get_cmp_op(prefix.opType, false) + cmp_mem_or_reg + ", ";
             m_output << get_last_reg(prefix.opType) + '\n';
         }
+    }
+
+    inline void bool_set_xmm(ExprInf& prefix, const std::string j_instruc, const std::string parity_jump_stmt) {
+        std::string float_mem = prefix.opType == OpType::FLOAT ? add_float_num(0x3F800000, "  dd  ") : add_float_num(0x3FF0000000000000, "  dq  ");
+        std::string float_label = " .FL" + std::to_string(m_extra_label_cnt);
+        size_t mid_float_set_comp_label = m_extra_label_cnt + 1;
+        m_output << parity_jump_stmt + float_label + '\n' + "  j" + j_instruc + float_label + '\n' + prefix.mov + prefix.reg + "DWORD [" \
+            + float_mem + "]\n.FL" + std::to_string(mid_float_set_comp_label) + ":\n";
+        std::string reg_wc = get_before_comma(prefix.reg);
+        m_output_end << ".FL" + std::to_string(m_extra_label_cnt) + ":\n" + "  xorps" + reg_wc + ',' + reg_wc + "\n  jmp .FL" + std::to_string(mid_float_set_comp_label) + '\n';
+        m_extra_label_cnt += 2;
+    }
+
+    //TODO: in float comparisons were both sides return an integer and one of them is not could technically be optimized to avoid a redundant mov
+    template <typename T>
+    inline bool check_float_set_comp(const T* comp, ExprInf& prefix, const std::string true_op, const std::string false_op, 
+                                        const std::string parity_jump_stmt) {
+        std::string instruc;
+        if (!prefix.if_inf.jump) {
+            instruc = false_op;
+            if (comp->num_result == CompareResult::FORCE_INT_NUM) {
+                cmov_reg(instruc, "eax", "al", "edx", "setp", "1");
+                return true;
+            } else if (comp->num_result == CompareResult::SUB_RH_NUM) {
+                cmov_reg(instruc, "edx", "dl", get_next_reg(OpType::INT), "setnp", "0");
+                return true;
+            }
+        } else {
+            instruc = true_op;
+            if (comp->num_result == CompareResult::FORCE_INT_NUM) {
+                cmov_reg(instruc, "eax", "al", "edx", "setnp", "0");
+                return true;
+            } else if (comp->num_result == CompareResult::SUB_RH_NUM) {
+                cmov_reg(instruc, "edx", "dl", get_next_reg(OpType::INT), "setp", "1");
+                return true;
+            }
+        }
+        if (comp->num_result == CompareResult::SUB_NUM) {
+            bool_set_xmm(prefix, instruc, parity_jump_stmt);
+            return true;
+        }
+        return false;
     }
     
     template<typename T>
@@ -154,10 +197,8 @@ public:
         }
     }
 
-    //!
-    //TODO: Add if statements that return numbers
     template <typename T>
-    inline void gen_if_compare_expr(const T* comp, bool rh_first, ExprInf& prefix, std::string false_op, std::string true_op) {
+    inline void gen_if_compare_expr(const T* comp, bool rh_first, ExprInf& prefix, const std::string false_op, const std::string true_op) {
         std::string cmp_mem_or_reg;
         if (prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) {
             if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu> || 
@@ -184,13 +225,15 @@ public:
         }
         
         std::string set_stmt;
-        std::string jump_stmt = prefix.if_inf.jump & ~comp->num_result ? "  j" + true_op : "  j" + false_op;
+        bool jump_stmt_bool = prefix.if_inf.jump;
+        const std::string jump_stmt = "  j" + (jump_stmt_bool ? true_op : false_op);
+        const std::string parity_jump_stmt = "  jp";
         std::string label_ident;
         size_t label;
-        if (comp->num_result) {
+        if (static_cast<char>(comp->num_result)) {
             label = m_extra_label_cnt;
             label_ident = " .FL";
-            set_stmt = "  set" + true_op;
+            set_stmt = "  set" + ((comp->num_result == CompareResult::SUB_RH_NUM) ? false_op : true_op);
         } else if (prefix.if_inf.label >= 2) {
             label = m_extra_label_cnt + prefix.if_inf.label - 2;
             label_ident = " .EL";
@@ -203,11 +246,18 @@ public:
             label = m_label_cnt_2;
             label_ident = " .L";
         }
-
-        if (prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) {
-            if (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareEquByPar>) {
+        
+        bool compared_as_int = false;
+        if constexpr (std::is_same_v<T, NodeExprLogCompareEquByPar> || std::is_same_v<T, NodeExprLogCompareNotEquByPar> ||
+                        std::is_same_v<T, NodeExprLogCompareGreaterByPar> || std::is_same_v<T, NodeExprLogCompareGreaterEquByPar> || 
+                        std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
+            if (static_cast<char>(comp->comp_as_int)) {
+                gen_expr(comp->rh, prefix);
+                compared_as_int = true;
+            }
+        } else if ((prefix.opType == OpType::FLOAT || prefix.opType == OpType::DOUBLE) && !compared_as_int) {
+            if constexpr (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareEquByPar>) {
                 size_t parity_jump;
-                const std::string parity_jump_stmt = "  jp";
                 std::string parity_label_ident;
                 if (m_encapsulated_if_or > 0) {
                     parity_jump = m_extra_label_cnt;
@@ -226,44 +276,85 @@ public:
                     parity_jump = m_label_cnt_2;
                     parity_label_ident = " .L";
                 } 
-                
+        
                 // jump if parity tests for NaN state which is set to false (PF isn't fully useless!)
                 m_output << get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + ", ";
                 if (!rh_first) {
                     gen_empty_term(std::get<NodeTerm*>(comp->rh->var), prefix.opType);
-                    m_output << parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + '\n' + \
-                        get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + ", ";
-                    gen_empty_term(std::get<NodeTerm*>(comp->rh->var), prefix.opType);
                 } else {
-                    m_output << get_last_reg(prefix.opType) + '\n' + parity_jump_stmt + parity_label_ident + \
-                        std::to_string(parity_jump) + '\n' + get_cmp_op(prefix.opType, true) + cmp_mem_or_reg + \
-                        ',' + get_last_reg(prefix.opType) + '\n';
+                    m_output << get_last_reg(prefix.opType) + '\n';
                 }
-            } else {
-                if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu> ||
-                                std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
-                    if (!rh_first) {
-                        std::string prev = prefix.reg;
-                        std::string next_reg = ' ' + get_next_reg(prefix.opType);
-                        prefix.reg = next_reg + ", ";
-                        gen_term(std::get<NodeTerm*>(comp->rh->var), prefix);
-                        prefix.reg = prev;
-                        m_output << get_cmp_op(prefix.opType, false) + next_reg + ',' + cmp_mem_or_reg + '\n';
-                    } else {
-                        m_output << get_cmp_op(prefix.opType, false) + get_last_reg(prefix.opType) + ',' + cmp_mem_or_reg + '\n';
+                if (!check_float_set_comp<T>(comp, prefix, true_op, false_op, parity_jump_stmt)) {
+                    if (!(static_cast<char>(comp->num_result))) {
+                        m_output << parity_jump_stmt + parity_label_ident + std::to_string(parity_jump) + '\n';
                     }
+                } else return;
+            } else if constexpr (std::is_same_v<T, NodeExprLogCompareLess> || std::is_same_v<T, NodeExprLogCompareLessEqu> ||
+                                std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
+                if (!rh_first) {
+                    std::string prev = prefix.reg;
+                    std::string next_reg = ' ' + get_next_reg(prefix.opType);
+                    prefix.reg = next_reg + ", ";
+                    gen_empty_term(std::get<NodeTerm*>(comp->rh->var), prefix.opType);
+                    prefix.reg = prev;
+                    m_output << get_cmp_op(prefix.opType, false) + next_reg + ',' + cmp_mem_or_reg + '\n';
                 } else {
-                    gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
+                    m_output << get_cmp_op(prefix.opType, false) + get_last_reg(prefix.opType) + ',' + cmp_mem_or_reg + '\n';
                 }
+                if (check_float_set_comp<T>(comp, prefix, true_op, false_op, parity_jump_stmt)) return;
+            } else {
+                gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
+                if (check_float_set_comp<T>(comp, prefix, true_op, false_op, parity_jump_stmt)) return;
             }
-        } else {
+        } else if (!compared_as_int) {
             gen_standard_comparison(comp, rh_first, prefix, cmp_mem_or_reg);
         }
+
+        if constexpr (std::is_same_v<T, NodeExprLogCompareEquByPar> || std::is_same_v<T, NodeExprLogCompareNotEquByPar> ||
+                        std::is_same_v<T, NodeExprLogCompareGreaterByPar> || std::is_same_v<T, NodeExprLogCompareGreaterEquByPar> || 
+                        std::is_same_v<T, NodeExprLogCompareLessByPar> || std::is_same_v<T, NodeExprLogCompareLessEquByPar>) {
+            if (comp->comp_as_int) {
+                if (static_cast<char>(comp->num_result)) {
+                    m_output << "  xor eax, edx\n";
+                    m_output << "  movzx eax, al\n";
+                    //TODO: when implementing casts this might be able to be improved
+                    if (prefix.opType == OpType::FLOAT) {
+                        m_output << "  xorps xmm0, xmm0\n  cvtsi2ss xmm0, eax\n";
+                    } else if (prefix.opType == OpType::DOUBLE) {
+                        m_output << "  xorpx xmm0, xmm0\n  cvtsi2sd xmm0, rax\n";
+                    }
+                } else {
+                    m_output << "  cmp al, dl\n  j" + true_op + label_ident + std::to_string(label) + '\n';
+                }
+                return;
+            }
+        } 
         
-        if (!comp->num_result) {
+        if (!static_cast<char>(comp->num_result)) {
             m_output << jump_stmt + label_ident + std::to_string(label) + '\n';
         } else {
-            m_output << set_stmt + " al\n";    
+            if (prefix.opType != OpType::FLOAT && prefix.opType != OpType::DOUBLE) {
+                std::string byte_reg = comp->num_result == CompareResult::SUB_RH_NUM ? " dl" : " al";
+                m_output << set_stmt + byte_reg + '\n';
+                if (comp->num_result == CompareResult::SUB_NUM || comp->num_result == CompareResult::FINAL_NUM) {
+                    m_output << "  movzx eax, al\n";
+                }
+            } else {
+                bool_set_xmm(prefix, prefix.if_inf.jump ? true_op : false_op, parity_jump_stmt);
+            }
+        }
+    }
+
+    template <typename T>
+    inline void gen_if_compare_expr_by_par(const T* comp, ExprInf& prefix, std::string sf, std::string st, std::string uf, 
+                                                std::string ut, std::string uff, std::string uft) {
+        std::pair<std::string, std::string> ops = get_jump_op(prefix.opType, sf, st, uf, ut, uff, uft);
+        if (!comp->comp_as_int) {
+            gen_paren_start<T>(comp, prefix);
+            gen_if_compare_expr<T>(comp, true, prefix, ops.first, ops.second);
+            m_used_regs--;
+        } else {
+            gen_if_compare_expr<T>(comp, true, prefix, ops.first, ops.second);
         }
     }
 
@@ -1158,38 +1249,34 @@ public:
             main.gen_if_compare_expr<NodeExprLogCompareLessEqu>(less_equ, false, prefix, ops.first, ops.second);
         }
         void gen(const NodeExprLogCompareEquByPar* equ, ExprInf& prefix) {
-            main.gen_paren_start(equ, prefix);
-            main.gen_if_compare_expr<NodeExprLogCompareEquByPar>(equ, true, prefix, "ne", "e");
-            main.m_used_regs--;
+            if (!equ->comp_as_int) {
+                main.gen_paren_start<NodeExprLogCompareEquByPar>(equ, prefix);
+                main.gen_if_compare_expr<NodeExprLogCompareEquByPar>(equ, true, prefix, "ne", "e");
+                main.m_used_regs--;
+            } else {
+                main.gen_if_compare_expr<NodeExprLogCompareEquByPar>(equ, true, prefix, "ne", "e");
+            }
         }
         void gen(const NodeExprLogCompareNotEquByPar* not_equ, ExprInf& prefix) {
-            main.gen_paren_start(not_equ, prefix);
-            main.gen_if_compare_expr<NodeExprLogCompareNotEquByPar>(not_equ, true, prefix, "e", "ne");
-            main.m_used_regs--;
+            if (!not_equ->comp_as_int) {
+                main.gen_paren_start<NodeExprLogCompareNotEquByPar>(not_equ, prefix);
+                main.gen_if_compare_expr<NodeExprLogCompareNotEquByPar>(not_equ, true, prefix, "e", "ne");
+                main.m_used_regs--;
+            } else {
+                main.gen_if_compare_expr<NodeExprLogCompareNotEquByPar>(not_equ, true, prefix, "e", "ne");
+            }
         }
         void gen(const NodeExprLogCompareGreaterByPar* greater, ExprInf& prefix) {
-            main.gen_paren_start(greater, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "le", "g", "be", "a", "nbe", "be");
-            main.gen_if_compare_expr<NodeExprLogCompareGreaterByPar>(greater, true, prefix, ops.first, ops.second);
-            main.m_used_regs--;
+            main.gen_if_compare_expr_by_par<NodeExprLogCompareGreaterByPar>(greater, prefix, "le", "g", "be", "a", "nbe", "be");
         }
         void gen(const NodeExprLogCompareGreaterEquByPar* greater_equ, ExprInf& prefix) {
-            main.gen_paren_start(greater_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "l", "ge", "b", "ae", "nb", "b");
-            main.gen_if_compare_expr<NodeExprLogCompareGreaterEquByPar>(greater_equ, true, prefix, ops.first, ops.second);
-            main.m_used_regs--;
+            main.gen_if_compare_expr_by_par<NodeExprLogCompareGreaterEquByPar>(greater_equ, prefix, "l", "ge", "b", "ae", "nb", "b");
         }
         void gen(const NodeExprLogCompareLessByPar* less, ExprInf& prefix) {
-            main.gen_paren_start(less, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "ge", "l", "ae", "b", "nbe", "be");
-            main.gen_if_compare_expr<NodeExprLogCompareLessByPar>(less, true, prefix, ops.first, ops.second);
-            main.m_used_regs--;
+            main.gen_if_compare_expr_by_par<NodeExprLogCompareLessByPar>(less, prefix, "ge", "l", "ae", "b", "nbe", "be");
         }
         void gen(const NodeExprLogCompareLessEquByPar* less_equ, ExprInf& prefix) {
-            main.gen_paren_start(less_equ, prefix);
-            std::pair<std::string, std::string> ops = main.get_jump_op(prefix.opType, "g", "le", "a", "be", "nb", "b");
-            main.gen_if_compare_expr<NodeExprLogCompareLessEquByPar>(less_equ, true, prefix, ops.first, ops.second);
-            main.m_used_regs--;
+            main.gen_if_compare_expr_by_par<NodeExprLogCompareLessEquByPar>(less_equ, prefix, "g", "le", "a", "be", "nb", "b");
         }
         void gen(const NodeExprLogOpAnd* _and, ExprInf& prefix) {
             // I'm actually really proud of the and and or code
@@ -1383,8 +1470,10 @@ private:
         }
     }
 
-    const inline std::pair<std::string, std::string> get_jump_op(OpType opType, std::string sf, std::string st, std::string uf, std::string ut, 
-                                                                    std::string uff, std::string uft) {
+    const inline std::pair<std::string, std::string> get_jump_op(OpType opType, const std::string sf, 
+                                                                    const std::string st, const std::string uf, 
+                                                                    const std::string ut, const std::string uff, 
+                                                                    const std::string uft) {
         std::pair<std::string, std::string> ret;
         if (opType == OpType::FLOAT || opType == OpType::DOUBLE) {
             ret.first = uft;
@@ -1512,6 +1601,13 @@ private:
         m_output << ".EL" + std::to_string(m_extra_label_cnt++) + ":\n";
     }
 
+    inline void cmov_reg(std::string cmov_cc, const std::string dest, const std::string dest_byte, const std::string temp, 
+                            const std::string parity_set, const std::string temp_val) {
+        m_output << "  " + parity_set + ' ' + dest_byte + '\n' +
+                    "  mov " + temp + ", " + temp_val + '\n' + 
+                    "  cmov" + cmov_cc + ' ' + dest +  ", " + temp + '\n';
+    }
+
     inline std::string add_float_num(int64_t num, std::string ro_cmd) {
         if (!m_float_nums.contains(num)) {
             std::string float_mem = "FI" + std::to_string(m_float_nums.size());
@@ -1566,7 +1662,7 @@ private:
     }
 
     // Does an instruction but flips registers if use_e is 0
-    inline void do_instruc(ExprInf& inf, std::string instruc, std::string next_reg, std::string reg_wc) {
+    inline void do_instruc(ExprInf& inf, const std::string instruc, std::string next_reg, std::string reg_wc) {
             if (inf.use_e) {
                 m_output << instruc + inf.reg + next_reg + '\n';
             } else {

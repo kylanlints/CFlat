@@ -27,6 +27,7 @@ constexpr unsigned long IMMEDIATE_BIT_LIMIT_MINUS_ONE = 31;
 constexpr unsigned long MEM_CHUNK_SIZE = 1024 * 512;
 
 enum class VarType {INT_64, INT_32, INT_16, BYTE, BOOL, FLOAT, DOUBLE, UNKNOWN};
+enum class CompareResult : char {NORMAL = 0, FINAL_NUM = 1, SUB_NUM = 2, SUB_RH_NUM = 3, FORCE_INT_NUM = 4};
 
 const std::unordered_map<TokenType, std::pair<VarType, u_int8_t>> var_associations {
     {TokenType::K_INT, INT_DEF},
@@ -53,12 +54,20 @@ const std::unordered_map<VarType, u_int8_t> var_sizes {
 enum class OperatorType {ADD, SUB, MUL, DIV, MOD, NOT, BITWISE, NONE};
 enum class ExprElementType {MEMORY, IMMEDIATE, PAREN};
 
+template<class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+
+struct NodeExpr;
+
+struct ExprElement {
+    ExprElementType t;
+    NodeExpr* e;
+};
+
 struct Variable {
     VarType type;
     bool is_signed;
 };
-
-struct NodeExpr;
 
 struct NodeExprBinAdd {
     NodeExpr* lh;
@@ -269,7 +278,7 @@ struct NodeExprLogTest {
 struct NodeExprLogCompareEqu {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -277,7 +286,7 @@ struct NodeExprLogCompareEqu {
 struct NodeExprLogCompareNotEqu {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -285,7 +294,7 @@ struct NodeExprLogCompareNotEqu {
 struct NodeExprLogCompareGreater {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -293,7 +302,7 @@ struct NodeExprLogCompareGreater {
 struct NodeExprLogCompareLess {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -301,7 +310,7 @@ struct NodeExprLogCompareLess {
 struct NodeExprLogCompareGreaterEqu {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -309,7 +318,7 @@ struct NodeExprLogCompareGreaterEqu {
 struct NodeExprLogCompareLessEqu {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool rh_ident;
 };
@@ -317,7 +326,7 @@ struct NodeExprLogCompareLessEqu {
 struct NodeExprLogCompareEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -326,7 +335,7 @@ struct NodeExprLogCompareEquByPar {
 struct NodeExprLogCompareNotEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -335,7 +344,7 @@ struct NodeExprLogCompareNotEquByPar {
 struct NodeExprLogCompareGreaterByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -344,7 +353,7 @@ struct NodeExprLogCompareGreaterByPar {
 struct NodeExprLogCompareLessByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -353,7 +362,7 @@ struct NodeExprLogCompareLessByPar {
 struct NodeExprLogCompareGreaterEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -362,7 +371,7 @@ struct NodeExprLogCompareGreaterEquByPar {
 struct NodeExprLogCompareLessEquByPar {
     NodeExpr* lh;
     NodeExpr* rh;
-    char num_result = 0;
+    CompareResult num_result = CompareResult::NORMAL;
     bool lh_ident;
     bool comp_as_int;
     long last_areg_op;
@@ -479,8 +488,8 @@ private:
     unsigned long m_expr_pos = 0;
     std::vector<std::pair<unsigned long, unsigned long>> m_last_main_reg_ops;
     int m_lock_main_reg = 0;
-    ExprElementType m_left_element;
-    ExprElementType m_right_element; 
+    ExprElement m_left_element;
+    ExprElement m_right_element; 
     bool m_used_explicit_paren = false;
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
@@ -823,6 +832,16 @@ private:
         }
     }
 
+    inline void update_lh_elem(ExprElementType type, NodeExpr* expr) {
+        m_left_element.t = type;
+        m_left_element.e = expr;
+    }
+
+    inline void update_rh_elem(ExprElementType type, NodeExpr* expr) {
+        m_right_element.t = type;
+        m_right_element.e = expr;
+    }
+
     void update_extra_space(int num) {
         if (num > m_used_regs) {
             m_used_regs = num;
@@ -1143,7 +1162,7 @@ public:
                     return std::nullopt;
                 }
 
-                add_if_test(if_expr.value(), m_right_element);
+                add_if_test(if_expr.value(), m_right_element.t);
 
                 m_use_if_test = false;
                 m_in_if_stmt = false;
@@ -1269,7 +1288,8 @@ public:
         int two_parts = -1;
                               
         ExprElementType element_type = ExprElementType::MEMORY;
-        std::optional<NodeTerm*> lh = parseTerm(allowed_type, element_type, op_type);
+        NodeExpr* expr_element = expr;
+        std::optional<NodeTerm*> lh = parseTerm(allowed_type, element_type, expr_element, op_type);
         if (!lh.has_value()) {
             successful = false;
             return std::nullopt;
@@ -1286,7 +1306,7 @@ public:
             OperatorType op_type;
             u_int8_t prec = op_prec_and_type(next_token.value().type, op_type);
             if (prec == 255) {
-                m_right_element = element_type;
+                update_rh_elem(element_type, expr_element);
                 if (next_token.value().type != TokenType::C_PAREN && next_token.value().type != TokenType::SEMI) {
                     error("Bad operator or missing semicolon");
                     return std::nullopt;
@@ -1301,7 +1321,7 @@ public:
             m_used_explicit_paren = false;
 
             if (prec < min_prec) {
-                m_right_element = element_type;
+                update_rh_elem(element_type, expr_element);
                 break;
             }
 
@@ -1316,7 +1336,7 @@ public:
             }
 
             if (!full_expr) {
-                m_left_element = element_type;
+                update_lh_elem(element_type, expr_element);
             }
 
             bool rh_used_test = m_elem_used_test;
@@ -1359,20 +1379,21 @@ public:
             switch (next_token.value().type) { // I wish this could be cleaner but there are slight variations for each operator
                 case TokenType::ASTER:
                 {
-                    bool lh_im = m_left_element == ExprElementType::IMMEDIATE;
-                    bool rh_im = m_right_element == ExprElementType::IMMEDIATE;
-                    if (m_right_element == ExprElementType::PAREN) {
-                        bool flip = (m_left_element != ExprElementType::PAREN && (is_signed || !lh_im) && !is_expr_too_big_imm);
+                    bool lh_im = m_left_element.t == ExprElementType::IMMEDIATE;
+                    bool rh_im = m_right_element.t == ExprElementType::IMMEDIATE;
+                    if (m_right_element.t == ExprElementType::PAREN) {
+                        bool flip = (m_left_element.t != ExprElementType::PAREN && (is_signed || !lh_im) && !is_expr_too_big_imm);
                         expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, !flip, 
                             (lh_im ? flip ? 2 : 1 : 0), flip, flip);
                     } else if (rh_im && (!is_signed || is_expr_too_big_imm)) {
                         expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, 
-                            (m_left_element == ExprElementType::PAREN), 1, false, true);
+                            (m_left_element.t == ExprElementType::PAREN), 1, false, true);
                     } else {
                         expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, false, 
-                            (lh_im ? 1 : rh_im ? 2 : 0), (m_left_element == ExprElementType::PAREN), false);
+                            (lh_im ? 1 : rh_im ? 2 : 0), (m_left_element.t == ExprElementType::PAREN), false);
                     }
                     if (!is_signed) {
+                        // TODO: dont do this if num is in optimize_mul in generate.hpp
                         m_last_main_reg_ops.back().second = m_expr_pos + 1;
                     }
                     break;
@@ -1384,11 +1405,11 @@ public:
                 }
                 case TokenType::HYPHEN:
                     expr->var = makeBinExpr<NodeExprBinSub, NodeExprBinSubByPar>(expr_cpy, rh.value(), lh_by_parens, 
-                        (m_right_element == ExprElementType::PAREN), (m_right_element == ExprElementType::IMMEDIATE), false, false);
+                        (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     break;
                 case TokenType::SLASH:
                     expr->var = makeBinExpr<NodeExprBinDiv, NodeExprBinDivByPar>(expr_cpy, rh.value(), lh_by_parens, 
-                        (m_right_element == ExprElementType::PAREN), (m_right_element == ExprElementType::IMMEDIATE), false, false);
+                        (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     if (m_cur_var_type != VarType::FLOAT && m_cur_var_type != VarType::DOUBLE) {
                         m_last_main_reg_ops.back().second = m_expr_pos + 1;
                     }
@@ -1399,7 +1420,7 @@ public:
                         return std::nullopt;
                     }
                     expr->var = makeBinExpr<NodeExprBinMod, NodeExprBinModByPar>(expr_cpy, rh.value(), lh_by_parens, 
-                        (m_right_element == ExprElementType::PAREN), (m_right_element == ExprElementType::IMMEDIATE), false, false);
+                        (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     m_last_main_reg_ops.back().second = m_expr_pos + 1;
                     break;
                 case TokenType::AMPERSAND:
@@ -1471,8 +1492,8 @@ public:
                     error("Something went very wrong");
                     return std::nullopt;
             }
-
-            m_left_element = ExprElementType::PAREN;
+            
+            update_lh_elem(ExprElementType::PAREN, expr_element);
             full_expr = true;
         }
         
@@ -1482,7 +1503,7 @@ public:
         // int x = (5 * y) + (z * 8)
         // So that way it can store everything in the right registers
         if (full_expr) {
-            m_right_element = ExprElementType::PAREN;
+            update_rh_elem(ExprElementType::PAREN, expr_element);
         }
 
         if (used_two_part) {
@@ -1506,14 +1527,14 @@ public:
 
     template<typename T, typename T2>
     inline NodeExprBin* makeBinExprCommunitive(NodeExpr*& expr_cpy, NodeExpr*& rh, long& lh_by_parens) {
-        bool lh_im = m_left_element == ExprElementType::IMMEDIATE;
-        bool rh_im = m_right_element == ExprElementType::IMMEDIATE;
-        if (m_right_element == ExprElementType::PAREN) {
-            bool flip = (m_left_element != ExprElementType::PAREN && !is_expr_too_big_imm);
+        bool lh_im = m_left_element.t == ExprElementType::IMMEDIATE;
+        bool rh_im = m_right_element.t == ExprElementType::IMMEDIATE;
+        if (m_right_element.t == ExprElementType::PAREN) {
+            bool flip = (m_left_element.t != ExprElementType::PAREN && !is_expr_too_big_imm);
             return makeBinExpr<T, T2>(expr_cpy, rh, lh_by_parens, !flip, false, false, flip);
         } else if (rh_im && is_expr_too_big_imm) {
             return makeBinExpr<T, T2>(expr_cpy, rh, lh_by_parens, 
-                (m_left_element == ExprElementType::PAREN), false, false, true);
+                (m_left_element.t == ExprElementType::PAREN), false, false, true);
         } else {
             return makeBinExpr<T, T2>(expr_cpy, rh, lh_by_parens, false, false, false, false);
         }
@@ -1530,7 +1551,7 @@ public:
             return true;
         } else {
             expr->var = makeBinExpr<T, T2>(expr_cpy, rh, lh_by_parens, 
-                m_right_element == ExprElementType::PAREN, m_right_element == ExprElementType::IMMEDIATE, false, false);
+                m_right_element.t == ExprElementType::PAREN, m_right_element.t == ExprElementType::IMMEDIATE, false, false);
             return true;
         }
     }
@@ -1539,7 +1560,7 @@ public:
     NodeExprBin* makeBinExpr(NodeExpr* lh, NodeExpr* rh, long& lh_by_parens, bool by_paren, char by_immediate, bool lh_paren, bool flip) {
         m_expr_pos++;
         if (!by_paren) {
-            if (flip && m_right_element == ExprElementType::PAREN) {
+            if (flip && m_right_element.t == ExprElementType::PAREN) {
                 m_used_regs_ctr--;
             }
             return makeBinExprS<T>(lh, rh, by_immediate, lh_paren, flip);
@@ -1607,46 +1628,58 @@ public:
     }
 
     template<typename T, typename T2, typename T3>
-    NodeExprLog* makeLogExpr(NodeExpr* lh, NodeExpr* rh, bool lh_used_test, bool rh_used_test) {
+    NodeExprLog* makeLogExpr(NodeExpr*& lh, NodeExpr*& rh, bool lh_used_test, bool rh_used_test) {
         m_use_if_test = false;
         m_expr_pos++;
         m_last_main_reg_ops.back().second = m_expr_pos;
-        if (m_right_element == ExprElementType::PAREN) {
-            if (!(m_left_element == ExprElementType::IMMEDIATE && is_expr_too_big_imm) && m_left_element != ExprElementType::PAREN) {
-                return makeLogExprS<T3>(rh, lh, rh_used_test, lh_used_test, m_right_element, m_left_element);
+        if (m_right_element.t == ExprElementType::PAREN) {
+            if (!(m_left_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) && m_left_element.t != ExprElementType::PAREN) {
+                return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
-                return makeLogExprS<T2>(lh, rh, lh_used_test, rh_used_test, m_left_element, m_right_element);
+                return makeLogExprS<T2>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
             }
-        } else if (m_right_element == ExprElementType::IMMEDIATE && is_expr_too_big_imm) {
-            if (m_left_element == ExprElementType::PAREN) {
-                return makeLogExprS<T2>(rh, lh, rh_used_test, lh_used_test, m_right_element, m_left_element);
+        } else if (m_right_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) {
+            if (m_left_element.t == ExprElementType::PAREN) {
+                return makeLogExprS<T2>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
-                return makeLogExprS<T>(rh, lh, rh_used_test, lh_used_test, m_right_element, m_left_element);
+                return makeLogExprS<T>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             }
-        } else if (m_left_element == ExprElementType::IMMEDIATE && m_right_element == ExprElementType::MEMORY) {
-            return makeLogExprS<T3>(rh, lh, rh_used_test, lh_used_test, m_right_element, m_left_element);
+        } else if (m_left_element.t == ExprElementType::IMMEDIATE && m_right_element.t == ExprElementType::MEMORY) {
+            return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
         } else {
-            return makeLogExprS<T>(lh, rh, lh_used_test, rh_used_test, m_left_element, m_right_element);
+            return makeLogExprS<T>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
         }   
     }
 
     template<typename T>
-    NodeExprLog* makeLogExprS(NodeExpr* lh, NodeExpr* rh, bool lh_used_test, bool rh_used_test, ExprElementType lh_elem, ExprElementType rh_elem) {
+    NodeExprLog* makeLogExprS(NodeExpr*& lh, NodeExpr*& rh, NodeExpr*& lh_skip_par, NodeExpr*& rh_skip_par, bool lh_used_test, 
+                                bool rh_used_test, ExprElementType lh_elem, ExprElementType rh_elem) {
         NodeExprLog* log_expr = allocator.allocate<NodeExprLog>();
         T* operation = allocator.allocate<T>();
 
         operation->lh = lh;
         operation->rh = rh;
 
+        CompareResult num_result_val;
+        // I am so utterly completely confused why the () ref = () arg is necesssary but it doesnt compile without it
+        auto set_num_result = overloaded {
+            [&num_result_val](auto&& arg) {CompareResult& ref = (CompareResult&) arg->num_result; ref = num_result_val;},
+            [&num_result_val](NodeExprLogTest* arg) {;}
+        };
+
         if (lh_used_test) {
             if (rh_used_test) {
-                std::get<T*>(std::get<NodeExprLog*>(operation->lh->var)->var)->num_result = 2;
-                std::get<T*>(std::get<NodeExprLog*>(operation->rh->var)->var)->num_result = 2;
+                num_result_val = CompareResult::FORCE_INT_NUM;
+                std::visit(set_num_result, std::get<NodeExprLog*>(lh_skip_par->var)->var);
+                num_result_val = CompareResult::SUB_RH_NUM;
+                std::visit(set_num_result, std::get<NodeExprLog*>(rh_skip_par->var)->var); 
             } else {
-                std::get<T*>(std::get<NodeExprLog*>(operation->lh->var)->var)->num_result = 1;
+                num_result_val = CompareResult::SUB_NUM;
+                std::visit(set_num_result, std::get<NodeExprLog*>(lh_skip_par->var)->var);
             }
         } else if (rh_used_test) {
-            std::get<T*>(std::get<NodeExprLog*>(operation->rh->var)->var)->num_result = 1;
+            num_result_val = CompareResult::SUB_NUM;
+            std::visit(set_num_result, std::get<NodeExprLog*>(rh_skip_par->var)->var);
         }
         
         if constexpr (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareNotEqu> ||
@@ -1663,7 +1696,7 @@ public:
             m_last_main_reg_ops.pop_back();
         }
         
-        operation->num_result = !m_in_if_stmt;
+        operation->num_result = static_cast<CompareResult>(!m_in_if_stmt);
         m_elem_used_test = true;
         log_expr->var = operation;
         return log_expr;
@@ -1678,7 +1711,7 @@ public:
         if (!lh_used_test) { //TODO: make this a function
             NodeExpr* lh_temp = allocator.allocate<NodeExpr>();
             NodeExprLog* lh_log_expr = allocator.allocate<NodeExprLog>();
-            NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_left_element, m_last_main_reg_ops, m_expr_pos);
+            NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_left_element.t, m_last_main_reg_ops, m_expr_pos);
 
             log_test->expr = lh;
             lh_log_expr->var = log_test;
@@ -1688,7 +1721,7 @@ public:
         if (!rh_used_test) {
             NodeExpr* rh_temp = allocator.allocate<NodeExpr>();
             NodeExprLog* rh_log_expr = allocator.allocate<NodeExprLog>();
-            NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_right_element, m_last_main_reg_ops, m_expr_pos);
+            NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_right_element.t, m_last_main_reg_ops, m_expr_pos);
 
             log_test->expr = rh;
             rh_log_expr->var = log_test;
@@ -1704,7 +1737,7 @@ public:
         return log_expr;
     }
 
-    std::optional<NodeTerm*> parseTerm(VarType& allowed_type, ExprElementType& element_type, const OperatorType& op_type) {
+    std::optional<NodeTerm*> parseTerm(VarType& allowed_type, ExprElementType& element_type, NodeExpr*& expr_element, const OperatorType& op_type) {
         NodeTerm* term = allocator.allocate<NodeTerm>();
 
         std::optional<Token> token = next();
@@ -1880,6 +1913,8 @@ public:
                     return std::nullopt;
                 }
 
+                expr_element = paren_expr.value();
+
                 // if parse_expr only parses one term and ends in a paren this is still set to true afterward
                 if (is_expr_too_big_imm && !fits_in_immediate(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(paren_expr.value()->var)->var)->bin_num)) {
                     paren->only_too_large_imm = true;
@@ -1918,7 +1953,7 @@ public:
                     if (next_token.value().type == TokenType::O_PAREN) {
                         if (is_paren_const()) {
                             m_index += 2;
-                            std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, OperatorType::NONE);
+                            std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NONE);
                             if (!single_op_term.has_value()) {
                                 return std::nullopt;
                             }
@@ -1944,7 +1979,7 @@ public:
                                 next_token.value().type == TokenType::FLOAT_LIT || next_token.value().type == TokenType::N_FLOAT_LIT ||
                                 next_token.value().type == TokenType::U_INT_LIT || next_token.value().type == TokenType::U_LONG_LIT) {
                         consume();
-                        std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, OperatorType::NOT);
+                        std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
                         NodeTermIntLit* int_lit = std::get<NodeTermIntLit*>(single_op_term.value()->var);
                         term->var = int_lit;
                         break;
@@ -1956,7 +1991,7 @@ public:
                 if (_not) {
                     NodeTermNotExpr* not_expr = allocator.allocate<NodeTermNotExpr>();
 
-                    std::optional<NodeTerm*> not_term = parseTerm(allowed_type, element_type, OperatorType::NOT);
+                    std::optional<NodeTerm*> not_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
                     if (!not_term.has_value()) {
                         return std::nullopt;
                     }
@@ -1966,7 +2001,7 @@ public:
                 } else {
                     NodeTermNegExpr* neg_expr = allocator.allocate<NodeTermNegExpr>();
 
-                    std::optional<NodeTerm*> neg_term = parseTerm(allowed_type, element_type, OperatorType::NOT);
+                    std::optional<NodeTerm*> neg_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
                     if (!neg_term.has_value()) {
                         return std::nullopt;
                     }
@@ -1993,6 +2028,8 @@ public:
                     return std::nullopt;
                 }
 
+                expr_element = not_expr.value();
+
                 if (expect_paren) {
                     if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
                         return std::nullopt;
@@ -2003,7 +2040,7 @@ public:
                     NodeExpr* expr = allocator.allocate<NodeExpr>();
                     NodeExprLog* log_expr = allocator.allocate<NodeExprLog>();
                     // m_right element will be set to the element type of the final expression
-                    NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_right_element, m_last_main_reg_ops, m_expr_pos);
+                    NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_right_element.t, m_last_main_reg_ops, m_expr_pos);
 
                     log_test->expr = not_expr.value();
                     log_expr->var = log_test;
@@ -2012,6 +2049,7 @@ public:
                     m_elem_used_test = true;
                 }
 
+                element_type = ExprElementType::PAREN;
                 log_not_expr->expr = not_expr.value();
                 term->var = log_not_expr;
                 break;
