@@ -1156,6 +1156,7 @@ public:
                 
                 m_in_if_stmt = true;
                 m_use_if_test = true;
+                m_decided_type.type = VarType::UNKNOWN;
 
                 std::optional<NodeExpr*> if_expr = parseExpr(VarType::UNKNOWN);
                 if (!if_expr.has_value()) {
@@ -1172,6 +1173,7 @@ public:
                 }
 
                 Variable decided_type = m_decided_type;
+                bool imm_truth = m_last_imm_truth;
                 
                 // reset flags
                 is_cur_expr_dynamic = false;
@@ -1186,7 +1188,7 @@ public:
                 }
 
                 if (decided_type.type == VarType::UNKNOWN) {
-                    if (m_last_imm_truth) {
+                    if (imm_truth) {
                         NodeStmtGroup* stmt_group = allocator.allocate<NodeStmtGroup>();
                         stmt_group->stmts.push_back(if_stmts.value());
                         stmt->stmt = stmt_group;
@@ -1217,8 +1219,6 @@ public:
 
                     stmtIf->else_stmts = else_stmts;
                 }
-
-                m_decided_type.type = VarType::UNKNOWN;
 
                 stmt->stmt = stmtIf;
 
@@ -2132,7 +2132,7 @@ public:
             int_lit->bin_num = static_cast<int64_t>(num.value());
         }
         
-        m_last_imm_truth = (!!int_lit);
+        m_last_imm_truth = (!!int_lit->bin_num);
         return int_lit;
     }
 

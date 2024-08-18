@@ -180,11 +180,11 @@ public:
     template<typename T>
     inline std::string get_lh_if_comp(const T* comp, ExprInf& prefix) {
         if (comp->lh_ident && !comp->rh_ident) {
-                return ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
-            } else {
-                gen_expr(comp->lh, prefix);
-                return get_before_comma(get_a_reg(prefix.opType));
-            }
+            return ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
+        } else {
+            gen_expr(comp->lh, prefix);
+            return get_before_comma(get_a_reg(prefix.opType));
+        }
     }
 
     template <typename T>
