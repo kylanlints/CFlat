@@ -177,7 +177,7 @@ public:
         return false;
     }
     
-    template<typename T>
+    template <typename T>
     inline std::string get_lh_if_comp(const T* comp, ExprInf& prefix) {
         if (comp->lh_ident && !comp->rh_ident) {
             return ' ' + get_address(std::get<NodeTermIdent*>(std::get<NodeTerm*>(comp->lh->var)->var)->ident, prefix);
@@ -358,6 +358,59 @@ public:
         }
     }
 
+    size_t gen_if_statement_start(const NodeExpr* if_expr, ExprInf& inf, bool last_no_else) {
+        if (last_no_else) {
+            m_label_cnt_2 -= m_label_backtrack - 2;
+            gen_expr(if_expr, inf);
+            m_label_cnt_2 += m_label_backtrack - 2;
+        } else {
+            gen_expr(if_expr, inf);
+        }
+        size_t label = m_label_cnt;
+        m_label_cnt += 3;
+        m_label_cnt_2 += 3;
+        if (m_use_truth_label) {
+            add_label(m_label_cnt - 2); 
+            m_use_truth_label = false;
+        }
+        m_label_backtrack += 3;
+
+        return label;
+    }
+
+    void gen_while_statement(const NodeExpr* if_expr, const NodeStmt* stmts, const std::optional<NodeStmt*> end_stmt, const std::string end_label, ExprInf& inf, bool last) {
+        add_label(m_label_cnt);
+        m_loop_labels.push_back(std::pair<std::string, std::string>{".L" + std::to_string(m_label_cnt), end_label});
+        size_t prev_label_cnt = m_label_cnt;
+        size_t prev_label_cnt_2 = m_label_cnt_2;
+        size_t prev_label_backtrack = m_label_backtrack;
+        m_label_cnt += 3;
+        m_label_cnt_2 += 3;
+        m_label_backtrack += 3;
+        gen_stmt(stmts, false); //Should not be last
+        if (end_stmt.has_value()) {
+            gen_stmt(end_stmt.value());
+        }
+        inf.if_inf.jump = true; // Since we want to jump on true instead of false this adds a not
+        size_t after_label_cnt = m_label_cnt;
+        size_t after_label_cnt_2 = m_label_cnt_2;
+        m_label_cnt = prev_label_cnt;
+        m_label_cnt_2 = prev_label_cnt_2;
+        if (last) {
+            m_label_cnt_2 -= prev_label_backtrack - 2;
+            gen_expr(if_expr, inf);
+            m_label_cnt_2 += prev_label_backtrack - 2;
+        } else {
+            gen_expr(if_expr, inf);
+        }
+        if (m_use_truth_label) {
+            add_label(m_label_cnt + 1); 
+            m_use_truth_label = false;
+        }
+        m_label_cnt = after_label_cnt;
+        m_label_cnt_2 = after_label_cnt_2;
+    }
+
     // returns true if it successfully generated assembly
     bool optimize_mul(int64_t num, bool lh_paren, std::string add, std::string sub, bool is_imul, bool is_float, bool rh_first, const NodeExpr* term, ExprInf& inf) {
         bool neg;
@@ -463,7 +516,6 @@ public:
         } else if (!(num & (num - 1))) { // even
             if (is_signed) {
                 if (num == 2) {
-                    gen_expr(term, inf);
                     std::string reg_wc = get_before_comma(inf.reg);
                     std::string next_reg = double_reg(false, term, inf, reg_wc);
                     if (inf.opType == OpType::SLONG) {
@@ -501,7 +553,7 @@ public:
                     even_div_reg = inf.reg;
                     gen_expr(term, inf);
                 }
-                m_output << "  shr" + even_div_reg + std::to_string(63-__builtin_clzll(num));
+                m_output << "  shr" + even_div_reg + std::to_string(63-__builtin_clzll(num)) + '\n';
                 return true;
             }
         } else if (!is_long) {
@@ -637,7 +689,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     inline void gen_mul_expr(const T* mul, bool rh_first, NodeExpr* term, int64_t num, ExprInf& prefix, 
         std::string add, std::string sub, std::string mul_cmd, bool is_imul, bool is_float) {
         bool lh_paren;
@@ -647,27 +699,27 @@ public:
             lh_paren = false;
         }
         if (!mul->by_immediate || !optimize_mul(num, lh_paren, add, sub, is_imul, is_float, rh_first, term, prefix)) {
-                gen_expr(mul->lh, prefix);
-                m_output << mul_cmd;
-                if (is_imul || is_float) {
-                    m_output << prefix.reg;
-                }
-                if (!rh_first) {
-                    gen_empty_term(std::get<NodeTerm*>(mul->rh->var), prefix.opType);
-                } else {
-                    m_output << get_last_reg(prefix.opType) + '\n';
-                }
+            gen_expr(mul->lh, prefix);
+            m_output << mul_cmd;
+            if (is_imul || is_float) {
+                m_output << prefix.reg;
+            }
+            if (!rh_first) {
+                gen_empty_term(std::get<NodeTerm*>(mul->rh->var), prefix.opType);
+            } else {
+                m_output << get_last_reg(prefix.opType) + '\n';
+            }
         }
     };
 
-    template<typename T>
+    template <typename T>
     inline void gen_div_expr(const T* div, ExprInf& prefix, std::string div_cmd, std::string convert_cmd, bool is_signed, bool is_long, bool is_float) {
         if constexpr (std::is_same_v<T, NodeExprBinDiv>) {
             if (!div->by_immediate || !optimize_div(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(div->rh->var)->var)->bin_num,
                                                             is_signed, is_long, is_float, div->lh, prefix)) {
                 gen_expr(div->lh, prefix);
                 if (div->by_immediate) { // currently unreachable
-                    make_imm_if_too_big(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(div->rh->var)->var)->bin_num, prefix.opType);
+                    make_imm_if_too_big(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(div->rh->var)->var)->bin_num, prefix);
                 }
                 if (!is_float) {
                     m_output << convert_cmd + div_cmd + ' ';
@@ -687,7 +739,7 @@ public:
         }
     };
 
-    template<typename T>
+    template <typename T>
     void add(const T* add, bool rh_first, ExprInf& prefix) {
         gen_expr(add->lh, prefix);
         switch (prefix.opType) {
@@ -707,7 +759,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     void sub(const T* sub, bool rh_first, ExprInf& prefix) {
         gen_expr(sub->lh, prefix);
         switch (prefix.opType) {
@@ -720,7 +772,7 @@ public:
             default:
                 if constexpr (std::is_same_v<T, NodeExprBinSub>) {
                     if (sub->by_immediate) {
-                        make_imm_if_too_big(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(sub->rh->var)->var)->bin_num, prefix.opType);
+                        make_imm_if_too_big(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(sub->rh->var)->var)->bin_num, prefix);
                     }
                 }
                 m_output << "  sub" + prefix.reg;
@@ -732,7 +784,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     void mul(const T* mul, bool rh_first, ExprInf& prefix) {
         int64_t num;
         NodeExpr* term;
@@ -764,7 +816,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     void div(const T* div, ExprInf& prefix) {
         switch (prefix.opType) {
             case OpType::FLOAT:
@@ -788,7 +840,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     void shift_or_roll(const T* s, ExprInf& prefix, std::string instruc) {
         gen_expr(s->lh, prefix);
         
@@ -843,7 +895,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     void gen_paren_start(const T* expr, ExprInf& inf) {
         std::tuple<char, std::string, std::string> put_reg = paren_start<T>(expr, inf);
         gen_expr(expr->rh, inf);
@@ -997,22 +1049,7 @@ public:
         }
         void gen(const NodeStmtIf* _if, bool last) {
             ExprInf inf = main.get_expr_inf(_if->if_expr_type.type, _if->if_expr_type.is_signed);
-            if (last && !_if->else_stmts.has_value()) {
-                main.m_label_cnt_2 -= main.m_label_backtrack - 2;
-                main.gen_expr(_if->if_expr, inf);
-                main.m_label_cnt_2 += main.m_label_backtrack - 2;
-            } else {
-                main.gen_expr(_if->if_expr, inf);
-            }
-            size_t label = main.m_label_cnt;
-            main.m_label_cnt_2;
-            main.m_label_cnt += 3;
-            main.m_label_cnt_2 += 3;
-            if (main.m_use_truth_label) {
-                main.add_label(main.m_label_cnt - 2); 
-                main.m_use_truth_label = false;
-            }
-            main.m_label_backtrack += 3;
+            size_t label = main.gen_if_statement_start(_if->if_expr, inf, (last && !_if->else_stmts.has_value()));
             if (_if->else_stmts.has_value()) {
                 size_t label2 = main.m_label_cnt - 1;
                 size_t past_else_label;
@@ -1035,6 +1072,60 @@ public:
             }
         }
         void gen(const NodeStmtIfSet* _if, bool last) {
+            ;
+        }
+        void gen(const NodeStmtWhile* _while, bool last) {
+            if (_while->if_expr.has_value()) {
+                ExprInf inf = main.get_expr_inf(_while->if_expr_type.type, _while->if_expr_type.is_signed);
+                size_t label;
+                std::string end_label_str;
+                if (!_while->do_while) {
+                    label = main.gen_if_statement_start(_while->if_expr.value(), inf, last);
+                    end_label_str = ".L" + std::to_string(label);
+                } else {
+                    label = main.m_extra_label_cnt++;
+                    end_label_str = ".B" + std::to_string(label);
+                }
+                main.gen_while_statement(_while->if_expr.value(), _while->stmts, std::nullopt, end_label_str, inf, last);
+                main.m_output << end_label_str + ":\n";
+            } else {
+                std::string label = ".LINF" + std::to_string(main.m_extra_label_cnt);
+                std::string end_label = ".B" + std::to_string(main.m_extra_label_cnt + 1);
+                main.m_loop_labels.push_back(std::pair<std::string, std::string>{label, end_label});
+                main.m_extra_label_cnt += 2;
+                main.m_output << label + ":\n";
+                main.gen_stmt(_while->stmts);
+                main.m_output << "  jmp " + label + '\n' + end_label + ":\n";
+            }
+        }
+        void gen(const NodeStmtFor* _for, bool last) {
+            if (_for->if_expr.has_value()) {
+                ExprInf inf = main.get_expr_inf(_for->if_expr_type.type, _for->if_expr_type.is_signed);
+                main.gen_stmt(_for->init_stmt);
+                //TODO: this is just for the case when someone does for(int x = 0, x != 0) or for(; x < 0; x++) and should be optimized out sometimes
+                size_t label = main.gen_if_statement_start(_for->if_expr.value(), inf, last);
+                std::string end_label_str = ".L" + std::to_string(label);
+                main.gen_while_statement(_for->if_expr.value(), _for->stmts, _for->end_stmt, end_label_str, inf, last);
+                main.m_output << end_label_str + ":\n";
+            } else {
+                std::string label = ".LINF" + std::to_string(main.m_extra_label_cnt);
+                std::string end_label = ".B" + std::to_string(main.m_extra_label_cnt + 1);
+                main.m_loop_labels.push_back(std::pair<std::string, std::string>{label, end_label});
+                main.m_extra_label_cnt += 2;
+                main.gen_stmt(_for->init_stmt);
+                main.m_output << label + ":\n";
+                main.gen_stmt(_for->stmts);
+                main.gen_stmt(_for->end_stmt);
+                main.m_output << "  jmp " + label + '\n' + end_label + ":\n";
+            }
+        }
+        void gen(const NodeStmtBreak* _break, bool last) {
+            main.m_output << "  jmp " + main.m_loop_labels.at(main.m_loop_labels.size() - _break->loop - 1).second + '\n';
+        }
+        void gen(const NodeStmtContinue* _continue, bool last) {
+            main.m_output << "  jmp " + main.m_loop_labels.at(main.m_loop_labels.size() - _continue->loop - 1).first + '\n';
+        }
+        void gen(const NodeStmtAsm* _asm, bool last) {
 
         }
         void gen(const NodeStmtBlank* blank, bool last) {
@@ -1339,7 +1430,7 @@ public:
             } else if (prefix.opType == OpType::DOUBLE) {
                 std::string double_mem = main.add_float_num(int_lit->bin_num, "  dq  ");
                 main.m_output << prefix.mov + prefix.reg + "QWORD [" + double_mem + "]\n";
-            } else if (fits_in_immediate(int_lit->bin_num)) {
+            } else if (fits_in_immediate(int_lit->bin_num, prefix.varType)) {
                 main.m_output << prefix.mov + prefix.reg + std::to_string(static_cast<signed int>(int_lit->bin_num)) + '\n';
             } else if (prefix.uses_reg) {
                 main.m_output << prefix.mov + prefix.reg + std::to_string(int_lit->bin_num) + '\n';
@@ -1383,6 +1474,7 @@ private:
     size_t m_use_mid_or_label = 0;
     size_t m_encapsulated_if_and = 0;
     size_t m_encapsulated_if_or = 0;
+    std::vector<std::pair<std::string, std::string>> m_loop_labels;
     u_int8_t m_used_regs = 0;
     signed char m_last_mem_sign = 1;
     u_int32_t m_o_rax = 0;
@@ -1399,9 +1491,8 @@ private:
     inline static const std::string eax = " eax, ";
     inline static const std::string xmm0 = " xmm0, ";
 
-    const std::string make_var(const char* var, VarType type) {
+    const std::string make_var(const char* var, const VarType type) {
         u_int8_t size = var_sizes.at(type);
-        m_stack_loc -= size;
         std::string ind;
         switch (size) {
             case 1: 
@@ -1418,11 +1509,12 @@ private:
         }
         std::string var_loc = ind + " [rbp-" + std::to_string(m_stack_loc) + "]";
         m_variables.insert({var, var_loc});
+        m_stack_loc -= size;
         return var_loc;
     }
 
     // returns a_reg without spaces or commas attached
-    const std::string get_a_reg_exact_size(VarType type) {
+    const std::string get_a_reg_exact_size(const VarType type) {
         switch (type) {
             case VarType::INT_64:
                 return "rax";
@@ -1442,7 +1534,7 @@ private:
         }
     }
 
-    const std::string get_a_reg(OpType opType) {
+    const std::string get_a_reg(const OpType opType) {
         switch (opType) {
             case OpType::SLONG:
             case OpType::LONG:
@@ -1459,7 +1551,7 @@ private:
         }
     }
 
-    const std::string get_cmp_op(OpType opType, bool equ) {
+    const std::string get_cmp_op(OpType opType, const bool equ) {
         switch (opType) {
             case OpType::FLOAT:
                 return equ ? "  ucomiss" : "  comiss";
@@ -1470,7 +1562,7 @@ private:
         }
     }
 
-    const inline std::pair<std::string, std::string> get_jump_op(OpType opType, const std::string sf, 
+    const inline std::pair<std::string, std::string> get_jump_op(const OpType opType, const std::string sf, 
                                                                     const std::string st, const std::string uf, 
                                                                     const std::string ut, const std::string uff, 
                                                                     const std::string uft) {
@@ -1533,7 +1625,7 @@ private:
         }
     }
     
-    inline const std::string get_reg_or_adr(OpType opType, size_t index, signed char mem_sign) {
+    inline const std::string get_reg_or_adr(const OpType opType, const size_t index, signed char mem_sign) {
         if (opType == OpType::SLONG || opType == OpType::LONG) {
             if (index < sizeof(QWORDS)/sizeof(*QWORDS)) {
                 return QWORDS[index];
@@ -1571,29 +1663,29 @@ private:
         }
     }
 
-    inline const std::string get_next_reg_inc(OpType opType) {
+    inline const std::string get_next_reg_inc(const OpType opType) {
         std::string ret = get_reg_or_adr(opType, m_used_regs++, 1);
         m_last_mem_sign = 1;
         return ret;
     }
 
-    inline const std::string get_next_reg(OpType opType) {
+    inline const std::string get_next_reg(const OpType opType) {
         std::string ret = get_reg_or_adr(opType, m_used_regs, 1);
         m_last_mem_sign = 1;
         return ret;
     }
 
-    inline const std::string get_last_reg(OpType opType) {
+    inline const std::string get_last_reg(const OpType opType) {
         std::string ret = get_reg_or_adr(opType, m_used_regs - 1, -1);
         m_last_mem_sign = -1;
         return ret;
     }
 
-    inline std::string get_before_comma(std::string str) {
+    inline std::string get_before_comma(const std::string str) {
         return str.substr(0, str.length() - 2);
     }
 
-    inline void add_label(size_t cnt) {
+    inline void add_label(const size_t cnt) {
         m_output << ".L" + std::to_string(cnt) + ":\n";
     }
 
@@ -1601,14 +1693,14 @@ private:
         m_output << ".EL" + std::to_string(m_extra_label_cnt++) + ":\n";
     }
 
-    inline void cmov_reg(std::string cmov_cc, const std::string dest, const std::string dest_byte, const std::string temp, 
+    inline void cmov_reg(const std::string cmov_cc, const std::string dest, const std::string dest_byte, const std::string temp, 
                             const std::string parity_set, const std::string temp_val) {
         m_output << "  " + parity_set + ' ' + dest_byte + '\n' +
                     "  mov " + temp + ", " + temp_val + '\n' + 
                     "  cmov" + cmov_cc + ' ' + dest +  ", " + temp + '\n';
     }
 
-    inline std::string add_float_num(int64_t num, std::string ro_cmd) {
+    inline std::string add_float_num(const int64_t num, const std::string ro_cmd) {
         if (!m_float_nums.contains(num)) {
             std::string float_mem = "FI" + std::to_string(m_float_nums.size());
             m_section_rodata << "  " + float_mem + ro_cmd + std::to_string(num) + '\n';
@@ -1617,8 +1709,8 @@ private:
         } else return m_float_nums.at(num);
     }
 
-    inline void make_imm_if_too_big(int64_t num, OpType opType) {
-        if (!fits_in_immediate(num)) {
+    inline void make_imm_if_too_big(const int64_t num, const ExprInf& inf) {
+        if (!fits_in_immediate(num, inf.varType)) {
             m_output << "  mov rdx, " + std::to_string(num) + '\n'; //! Byte and word types
         }
     }
@@ -1628,7 +1720,7 @@ private:
         inf.use_e = -1;
     }
 
-    inline void gen_expr_or_mov_reg(bool move_reg, const NodeExpr* term, ExprInf& inf) {
+    inline void gen_expr_or_mov_reg(const bool move_reg, const NodeExpr* term, ExprInf& inf) {
         if (!move_reg) {
             gen_expr(term, inf);
         } else {
@@ -1638,7 +1730,7 @@ private:
 
     // moves value into the a register and the next register (increments used_regs if use_e is 0)
     // returns next_reg
-    inline std::string double_reg(bool rh_first, const NodeExpr* term, ExprInf& inf, std::string& reg_wc) {
+    inline std::string double_reg(const bool rh_first, const NodeExpr* term, ExprInf& inf, std::string& reg_wc) {
         if (!rh_first) {
             std::string next_reg = get_next_reg(inf.opType);
             gen_expr(term, inf);
@@ -1662,7 +1754,7 @@ private:
     }
 
     // Does an instruction but flips registers if use_e is 0
-    inline void do_instruc(ExprInf& inf, const std::string instruc, std::string next_reg, std::string reg_wc) {
+    inline void do_instruc(ExprInf& inf, const std::string instruc, const std::string next_reg, const std::string reg_wc) {
             if (inf.use_e) {
                 m_output << instruc + inf.reg + next_reg + '\n';
             } else {

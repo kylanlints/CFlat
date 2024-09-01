@@ -16,8 +16,8 @@ enum class TokenType {IDENT, INT_LIT, N_INT_LIT, FLOAT_LIT, N_FLOAT_LIT, LONG_LI
                         PERCENT, O_PAREN, C_PAREN, EXCLAM, EXCLAM_EQU, CARAT, TILDE, LESS, GREATER, LESS_EQU, 
                         GREATER_EQU, DOUB_LESS, DOUB_GREATER, LESS_CARAT, CARAT_GREATER, AMPERSAND, 
                         DOUB_AMPERSAND, PIPE, DOUB_PIPE, K_INT, K_BOOL, K_CHAR, K_FLOAT, K_DOUBLE, K_LONG, 
-                        K_SHORT, K_BYTE, K_IF, K_ELSE, K_EXIT, K_RETURN, K_D_CONST, K_D_UNSIGNED, K_FOR, 
-                        K_ASM, K_ASM_DATA, K_ASM_BSS, K_ASM_RODATA};
+                        K_SHORT, K_BYTE, K_IF, K_ELSE, K_EXIT, K_RETURN, K_D_CONST, K_D_UNSIGNED, K_WHILE, K_DO, 
+                        K_FOR, K_BREAK, K_CONTINUE, O_BRACK, C_BRACK, K_ASM, K_ASM_DATA, K_ASM_BSS, K_ASM_RODATA};
 
 const std::unordered_map<std::string, TokenType> keywords {
     {"int", TokenType::K_INT},
@@ -30,7 +30,11 @@ const std::unordered_map<std::string, TokenType> keywords {
     {"double", TokenType::K_DOUBLE},
     {"if", TokenType::K_IF},
     {"else", TokenType::K_ELSE},
+    {"while", TokenType::K_WHILE},
+    {"do", TokenType::K_DO},
     {"for", TokenType::K_FOR},
+    {"break", TokenType::K_BREAK},
+    {"continue", TokenType::K_CONTINUE},
     {"exit", TokenType::K_EXIT},
     {"return", TokenType::K_RETURN},
     {"unsigned", TokenType::K_D_UNSIGNED},
@@ -54,6 +58,8 @@ const std::unordered_map<TokenType, std::string> debug_list {
     {TokenType::PERCENT, "%"},
     {TokenType::O_PAREN, "("},
     {TokenType::C_PAREN, ")"},
+    {TokenType::O_BRACK, "["},
+    {TokenType::C_BRACK, "]"},
     {TokenType::EXCLAM, "!"},
     {TokenType::EXCLAM_EQU, "!="},
     {TokenType::CARAT, "^"},
@@ -80,7 +86,11 @@ const std::unordered_map<TokenType, std::string> debug_list {
     {TokenType::K_DOUBLE, "double"},
     {TokenType::K_IF, "if"},
     {TokenType::K_ELSE, "else"},
+    {TokenType::K_WHILE, "while"},
+    {TokenType::K_DO, "do"},
     {TokenType::K_FOR, "for"},
+    {TokenType::K_BREAK, "break"},
+    {TokenType::K_CONTINUE, "continue"},
     {TokenType::K_EXIT, "exit", },
     {TokenType::K_EXIT, "return"},
     {TokenType::K_D_UNSIGNED, "unsigned"},
@@ -162,7 +172,7 @@ public:
                     if (!tokens.empty() && type_declr_kewords.contains(tokens.back().type)) {
                         if (m_var_names.contains(buf)) {
                             // this is by far the slowest part of the code so might change this later
-                            // however it shouldnt hapen that much in normal code
+                            // however it shouldnt happen that much in normal code
                             bool is_bad = false;
                             for (int i : m_var_names.at(buf)){
                                 if (i == m_scope) {
@@ -259,6 +269,12 @@ public:
                     push_token(tokens, TokenType::C_CURLY);
                     m_scope = m_last_scopes.back();
                     m_last_scopes.pop_back();
+                    break;
+                case '[':
+                    push_token(tokens, TokenType::O_BRACK);
+                    break;
+                case ']':
+                    push_token(tokens, TokenType::C_BRACK);
                     break;
                 case '*':
                     push_token(tokens, TokenType::ASTER);

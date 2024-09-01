@@ -53,8 +53,9 @@ const std::unordered_map<VarType, u_int8_t> var_sizes {
 
 enum class OperatorType {ADD, SUB, MUL, DIV, MOD, NOT, BITWISE, NONE};
 enum class ExprElementType {MEMORY, IMMEDIATE, PAREN};
+enum class AsmSection {DATA, RODATA, BSS, TEXT};
 
-template<class... Ts>
+template <class... Ts>
 struct overloaded : Ts... { using Ts::operator()...; };
 
 struct NodeExpr;
@@ -444,7 +445,6 @@ struct NodeStmtIf {
     NodeExpr* if_expr;
     NodeStmt* stmts;
     std::optional<NodeStmt*> else_stmts;
-    size_t end_label;
 };
 
 struct NodeStmtIfSet {
@@ -452,7 +452,34 @@ struct NodeStmtIfSet {
     NodeStmtVarSet* var_set;
     NodeStmt* stmts;
     std::optional<NodeStmt*> else_stmts;
-    size_t end_label;
+};
+
+struct NodeStmtWhile {
+    Variable if_expr_type;
+    std::optional<NodeExpr*> if_expr;
+    NodeStmt* stmts;
+    bool do_while;
+};
+
+struct NodeStmtFor {
+    Variable if_expr_type;
+    std::optional<NodeExpr*> if_expr;
+    NodeStmt* init_stmt;
+    NodeStmt* end_stmt;
+    NodeStmt* stmts;
+};
+
+struct NodeStmtBreak {
+    size_t loop = 0; // 0 for current loop
+};
+
+struct NodeStmtContinue {
+    size_t loop = 0; // 0 for current loop
+};
+
+struct NodeStmtAsm {
+    AsmSection section;
+    std::string assembly;
 };
 
 struct NodeStmtBlank {
@@ -461,16 +488,18 @@ struct NodeStmtBlank {
 
 struct NodeStmt {
     std::variant<NodeStmtVarAssign*, NodeStmtVarSet*, NodeStmtExit*, NodeScope*, 
-                    NodeStmtGroup*, NodeStmtIf*, NodeStmtIfSet*, NodeStmtBlank*> stmt;
+                    NodeStmtGroup*, NodeStmtIf*, NodeStmtIfSet*, NodeStmtWhile*, 
+                    NodeStmtFor*, NodeStmtBreak*, NodeStmtContinue*, NodeStmtAsm*, 
+                    NodeStmtBlank*> stmt;
 };
 
 struct NodeRoot {
     std::vector<NodeStmt*> stmts;
 };
 
-bool fits_in_immediate(signed long num) {
+bool fits_in_immediate(signed long num, VarType varType) {
     signed long check = num >> IMMEDIATE_BIT_LIMIT_MINUS_ONE;
-    return (check >= -1 && check <= 1);
+    return (check >= -1 && (check <= 0 || (varType != VarType::INT_64 && check <= 1)));
 }
 
 class Parser {
@@ -494,6 +523,7 @@ private:
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
     bool m_in_if_stmt = false;
+    size_t m_nested_loops = 0;
     Variable m_decided_type;
     bool m_last_imm_truth;
     std::vector<NodeExprTwoPart*> m_two_part_expr;
@@ -706,6 +736,31 @@ private:
         }
     }
 
+    std::optional<size_t> loop_statement_nested_check() {
+        if (next().has_value() && m_tokens[m_index].type == TokenType::O_BRACK) {
+            consume();
+            if (next().has_value() && m_tokens[m_index].type == TokenType::INT_LIT) {
+                size_t loop = std::stoul(m_tokens[m_index].value.value());
+                if (loop > m_nested_loops - 1) {
+                    error("Nested loop break or continue statement reaches non-existent loop");
+                    return std::nullopt;
+                }
+                consume();
+
+                if (!expect(TokenType::C_BRACK, "Expected closed bracket")) {
+                    return std::nullopt;
+                }
+
+                return loop;
+            } else {
+                error("Expected positive integer value without suffix in nested break or continue statement");
+                return std::nullopt;
+            }
+        } else {
+            return 0;
+        }
+    }
+
     int64_t get_int_bits_f(float _float) {
         return static_cast<int64_t>(std::bit_cast<int32_t>(_float));
     }
@@ -714,10 +769,10 @@ private:
         return std::bit_cast<int64_t>(_double);
     }
 
-    template<typename T>
+    template <typename T>
     inline void check_imm_too_big(T num) {
         // float instrucs dont support immediates in the first place, everything is done in memory
-        if (!fits_in_immediate(num) && m_cur_var_type != VarType::FLOAT && m_cur_var_type != VarType::DOUBLE) {
+        if (!fits_in_immediate(num, m_cur_var_type) && m_cur_var_type != VarType::FLOAT && m_cur_var_type != VarType::DOUBLE) {
             is_expr_too_big_imm = true;
         }
     }
@@ -876,12 +931,11 @@ public:
         return root;
     }
 
-    std::optional<NodeStmt*> parseStmt() {
+    std::optional<NodeStmt*> parseStmt(bool needs_semi = true) {
         TokenType tokenType = m_tokens.at(m_index).type;
         NodeStmt* stmt = allocator.allocate<NodeStmt>();
 
         bool used_descriptor = false;
-        bool needs_semi = true;
 
         //for descriptors
         while (true) {
@@ -1154,41 +1208,24 @@ public:
                     return std::nullopt;
                 }
                 
-                m_in_if_stmt = true;
-                m_use_if_test = true;
-                m_decided_type.type = VarType::UNKNOWN;
-
-                std::optional<NodeExpr*> if_expr = parseExpr(VarType::UNKNOWN);
+                std::optional<NodeExpr*> if_expr = parseIfStart();
                 if (!if_expr.has_value()) {
                     return std::nullopt;
                 }
 
-                add_if_test(if_expr.value(), m_right_element.t);
-
-                m_use_if_test = false;
-                m_in_if_stmt = false;
-
                 if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
                     return std::nullopt;
                 }
-
-                Variable decided_type = m_decided_type;
-                bool imm_truth = m_last_imm_truth;
                 
-                // reset flags
-                is_cur_expr_dynamic = false;
-                is_cur_expr_single = true;
-                m_elem_used_test = false;
-                m_expr_pos = 0;
-                m_last_main_reg_ops.assign({{0, 0}});
+                std::pair<Variable, bool> if_out = parseIfOut();
 
                 std::optional<NodeStmt*> if_stmts = parseStmt();
                 if (!if_stmts.has_value()) {
                     return std::nullopt;
                 }
 
-                if (decided_type.type == VarType::UNKNOWN) {
-                    if (imm_truth) {
+                if (if_out.first.type == VarType::UNKNOWN) {
+                    if (if_out.second) {
                         NodeStmtGroup* stmt_group = allocator.allocate<NodeStmtGroup>();
                         stmt_group->stmts.push_back(if_stmts.value());
                         stmt->stmt = stmt_group;
@@ -1203,11 +1240,7 @@ public:
                 }
 
                 NodeStmtIf* stmtIf = allocator.allocate<NodeStmtIf>();
-
-                stmtIf->if_expr_type.type = decided_type.type;
-                stmtIf->if_expr_type.is_signed = decided_type.is_signed;
-                stmtIf->if_expr = if_expr.value();
-                stmtIf->stmts = if_stmts.value();
+                stmtIf = parseIfCreate<NodeStmtIf*>(stmtIf, if_expr.value(), if_stmts.value(), if_out);
                 
                 std::optional<Token> next_token = next();
                 if (next_token.has_value() && next_token.value().type == TokenType::K_ELSE) {
@@ -1222,6 +1255,196 @@ public:
 
                 stmt->stmt = stmtIf;
 
+                break;
+            }
+            case TokenType::K_DO:
+            case TokenType::K_WHILE:
+            {
+                if (descriptor_error(used_descriptor)) {
+                    return std::nullopt;
+                }
+                needs_semi = false;
+
+                NodeStmtWhile* stmtWhile = allocator.allocate<NodeStmtWhile>();
+                std::optional<NodeStmt*> while_stmts;
+
+                m_nested_loops++;
+
+                if (tokenType == TokenType::K_DO) {
+                    while_stmts = parseStmt();
+                    if (!while_stmts.has_value()) {
+                        // it doesn't matter if m_nested_loops is too high if parsing fails part-way through.
+                        return std::nullopt;
+                    }
+
+                    if (!expect(TokenType::K_WHILE, "Expected while keyword after do statement")) {
+                        return std::nullopt;
+                    }
+
+                    stmtWhile->do_while = true;
+                }
+
+                consume();
+                if (!expect(TokenType::O_PAREN, "Expected open parenthesis")) {
+                    return std::nullopt;
+                }
+
+                std::optional<NodeExpr*> if_expr = parseIfStart();
+                if (!if_expr.has_value()) {
+                    return std::nullopt;
+                }
+
+                if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
+                    return std::nullopt;
+                }
+
+                std::pair<Variable, bool> if_out = parseIfOut();
+
+                if (tokenType == TokenType::K_WHILE) {
+                    while_stmts = parseStmt();
+                    if (!while_stmts.has_value()) {
+                        return std::nullopt;
+                    }
+
+                    stmtWhile->do_while = false;
+                }
+
+                if (if_out.first.type == VarType::UNKNOWN) {
+                    if (if_out.second) {
+                        stmtWhile->if_expr = std::nullopt;
+                        stmtWhile->stmts = while_stmts.value();
+                    } else {
+                        stmt->stmt = (NodeStmtBlank*) nullptr;
+                        break;
+                    }
+                } else {
+                    stmtWhile = parseIfCreate<NodeStmtWhile*>(stmtWhile, if_expr.value(), while_stmts.value(), if_out);
+                }
+
+                m_nested_loops--;
+
+                stmt->stmt = stmtWhile;
+
+                break;
+            }
+            case TokenType::K_FOR:
+            {
+                if (descriptor_error(used_descriptor)) {
+                    return std::nullopt;
+                }
+                needs_semi = false;
+
+                consume();
+                if (!expect(TokenType::O_PAREN, "Expected open parenthesis")) {
+                    return std::nullopt;
+                }
+
+                std::optional<NodeStmt*> for_init_stmt = parseStmt();
+                if (!for_init_stmt.has_value()) {
+                    return std::nullopt;
+                }
+
+                m_nested_loops++;
+
+                std::optional<NodeExpr*> if_expr = parseIfStart();
+                if (!if_expr.has_value()) {
+                    return std::nullopt;
+                }
+
+                if (!expect(TokenType::SEMI, "Expected semicolon")) {
+                    return std::nullopt;
+                }
+
+                std::pair<Variable, bool> if_out = parseIfOut();
+
+                 std::optional<NodeStmt*> for_end_stmt = parseStmt(false); 
+                if (!for_end_stmt.has_value()) {
+                    return std::nullopt;
+                }
+
+                if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
+                    return std::nullopt;
+                }
+
+                std::optional<NodeStmt*> for_stmts = parseStmt();
+                if (!for_stmts.has_value()) {
+                    return std::nullopt;
+                }
+
+                NodeStmtFor* stmtFor = allocator.allocate<NodeStmtFor>();
+
+                if (if_out.first.type == VarType::UNKNOWN) {
+                    if (if_out.second) {
+                        stmtFor->if_expr = std::nullopt;
+                        stmtFor->stmts = for_stmts.value();
+                    } else {
+                        // For statements with a const false condition should still create initial var
+                        NodeStmtGroup* stmt_group = allocator.allocate<NodeStmtGroup>();
+                        stmt_group->stmts.push_back(for_init_stmt.value());
+                        stmt->stmt = stmt_group;
+                        break;
+                    }
+                } else {
+                    stmtFor = parseIfCreate<NodeStmtFor*>(stmtFor, if_expr.value(), for_stmts.value(), if_out);
+                }
+
+                stmtFor->init_stmt = for_init_stmt.value();
+                stmtFor->end_stmt = for_end_stmt.value();
+
+                m_nested_loops--;
+
+                stmt->stmt = stmtFor;
+
+                break;
+            }
+            case TokenType::K_BREAK:
+            {
+                if (descriptor_error(used_descriptor)) {
+                    return std::nullopt;
+                }
+
+                if (!m_nested_loops) {
+                    error("Cannot use break statement outside of loop");
+                    return std::nullopt;
+                }
+
+                consume();
+
+                std::optional<size_t> loop = loop_statement_nested_check();
+                if (!loop.has_value()) {
+                    return std::nullopt;
+                }
+
+                NodeStmtBreak* breakStmt = allocator.allocate<NodeStmtBreak>();
+
+                breakStmt->loop = loop.value();
+
+                stmt->stmt = breakStmt;
+                break;
+            }
+            case TokenType::K_CONTINUE:
+            {
+                if (descriptor_error(used_descriptor)) {
+                    return std::nullopt;
+                }
+
+                if (!m_nested_loops) {
+                    error("Cannot use continue statement outside of loop");
+                    return std::nullopt;
+                }
+
+                consume();
+
+                std::optional<size_t> loop = loop_statement_nested_check();
+                if (!loop.has_value()) {
+                    return std::nullopt;
+                }
+
+                NodeStmtContinue* continueStmt = allocator.allocate<NodeStmtContinue>();
+
+                continueStmt->loop = loop.value();
+
+                stmt->stmt = continueStmt;
                 break;
             }
             case TokenType::K_EXIT:
@@ -1249,6 +1472,26 @@ public:
                     return std::nullopt;
                 }
                 break;
+            }
+            case TokenType::K_ASM:
+            case TokenType::K_ASM_BSS:
+            case TokenType::K_ASM_DATA:
+            case TokenType::K_ASM_RODATA:
+            {   
+                AsmSection section = AsmSection::TEXT;
+                switch (tokenType) {
+                    case TokenType::K_ASM_BSS:
+                        section = AsmSection::BSS;
+                    case TokenType::K_ASM_DATA:
+                        section = AsmSection::DATA;
+                    case TokenType::K_ASM_RODATA:
+                        section = AsmSection::RODATA;
+                }
+
+                std::string assembly;
+                while (next().has_value() && m_tokens[m_index].type != TokenType::SEMI) {
+                    // ADD STRINGS
+                }
             }
             case TokenType::SEMI:
                 // skips blank semicolon statement
@@ -1525,7 +1768,7 @@ public:
         return expr;
     }
 
-    template<typename T, typename T2>
+    template <typename T, typename T2>
     inline NodeExprBin* makeBinExprCommunitive(NodeExpr*& expr_cpy, NodeExpr*& rh, long& lh_by_parens) {
         bool lh_im = m_left_element.t == ExprElementType::IMMEDIATE;
         bool rh_im = m_right_element.t == ExprElementType::IMMEDIATE;
@@ -1540,7 +1783,7 @@ public:
         }
     }
 
-    template<typename T, typename T2, bool shift>
+    template <typename T, typename T2, bool shift>
     inline bool makeBinExprBitwise(NodeExpr*& expr, NodeExpr*& expr_cpy, NodeExpr*& rh, long& lh_by_parens) {
         if (m_cur_var_type == VarType::FLOAT || m_cur_var_type == VarType::DOUBLE) {
             error("Cannot use bitwise operator on float");
@@ -1556,7 +1799,7 @@ public:
         }
     }
 
-    template<typename T, typename T2>
+    template <typename T, typename T2>
     NodeExprBin* makeBinExpr(NodeExpr* lh, NodeExpr* rh, long& lh_by_parens, bool by_paren, char by_immediate, bool lh_paren, bool flip) {
         m_expr_pos++;
         if (!by_paren) {
@@ -1570,7 +1813,7 @@ public:
         }
     }
 
-    template<typename T>
+    template <typename T>
     NodeExprBin* makeBinExprS(NodeExpr* lh, NodeExpr* rh, char by_immediate, bool lh_paren, bool flip) {
         NodeExprBin* expr = allocator.allocate<NodeExprBin>();
         T* operation = allocator.allocate<T>();
@@ -1627,7 +1870,7 @@ public:
         }
     }
 
-    template<typename T, typename T2, typename T3>
+    template <typename T, typename T2, typename T3>
     NodeExprLog* makeLogExpr(NodeExpr*& lh, NodeExpr*& rh, bool lh_used_test, bool rh_used_test) {
         m_use_if_test = false;
         m_expr_pos++;
@@ -1642,7 +1885,7 @@ public:
             if (m_left_element.t == ExprElementType::PAREN) {
                 return makeLogExprS<T2>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
-                return makeLogExprS<T>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
+                return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             }
         } else if (m_left_element.t == ExprElementType::IMMEDIATE && m_right_element.t == ExprElementType::MEMORY) {
             return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
@@ -1651,7 +1894,7 @@ public:
         }   
     }
 
-    template<typename T>
+    template <typename T>
     NodeExprLog* makeLogExprS(NodeExpr*& lh, NodeExpr*& rh, NodeExpr*& lh_skip_par, NodeExpr*& rh_skip_par, bool lh_used_test, 
                                 bool rh_used_test, ExprElementType lh_elem, ExprElementType rh_elem) {
         NodeExprLog* log_expr = allocator.allocate<NodeExprLog>();
@@ -1702,7 +1945,7 @@ public:
         return log_expr;
     }
     
-    template<typename T>
+    template <typename T>
     NodeExprLog* makeLogExprOp(NodeExpr* lh, NodeExpr* rh, bool lh_used_test, bool rh_used_test) {
         m_expr_pos++;
         NodeExprLog* log_expr = allocator.allocate<NodeExprLog>();
@@ -1735,6 +1978,45 @@ public:
         operation->num_result = !m_use_if_test;
         log_expr->var = operation;
         return log_expr;
+    }
+
+    std::optional<NodeExpr*> parseIfStart() {
+        m_in_if_stmt = true;
+        m_use_if_test = true;
+        m_decided_type.type = VarType::UNKNOWN;
+
+        std::optional<NodeExpr*> if_expr = parseExpr(VarType::UNKNOWN);
+        if (!if_expr.has_value()) {
+            return std::nullopt;
+        }
+
+        add_if_test(if_expr.value(), m_right_element.t);
+
+        m_use_if_test = false;
+        m_in_if_stmt = false;
+
+        return if_expr;
+    }
+
+    std::pair<Variable, bool> parseIfOut() {
+        // reset flags
+        is_cur_expr_dynamic = false;
+        is_cur_expr_single = true;
+        m_elem_used_test = false;
+        m_expr_pos = 0;
+        m_last_main_reg_ops.assign({{0, 0}});
+
+        return std::pair<Variable, bool>{m_decided_type, m_last_imm_truth};
+    }
+
+    template <typename T>
+    T parseIfCreate(T node, NodeExpr* if_expr, NodeStmt* if_stmts, std::pair<Variable, bool> if_out) {
+        node->if_expr_type.type = if_out.first.type;
+        node->if_expr_type.is_signed = if_out.first.is_signed;
+        node->if_expr = if_expr;
+        node->stmts = if_stmts;
+
+        return node;
     }
 
     std::optional<NodeTerm*> parseTerm(VarType& allowed_type, ExprElementType& element_type, NodeExpr*& expr_element, const OperatorType& op_type) {
@@ -1916,7 +2198,7 @@ public:
                 expr_element = paren_expr.value();
 
                 // if parse_expr only parses one term and ends in a paren this is still set to true afterward
-                if (is_expr_too_big_imm && !fits_in_immediate(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(paren_expr.value()->var)->var)->bin_num)) {
+                if (is_expr_too_big_imm && !fits_in_immediate(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(paren_expr.value()->var)->var)->bin_num, m_cur_var_type)) {
                     paren->only_too_large_imm = true;
                 }
 
