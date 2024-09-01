@@ -13,6 +13,9 @@
             int REPLACE = 12345;
         }
     }
+    do {
+        int x = 5;
+    } while (x == 6);
     i = i - 1;
     exit(i);
 }

@@ -1271,6 +1271,7 @@ public:
                 m_nested_loops++;
 
                 if (tokenType == TokenType::K_DO) {
+                    consume();
                     while_stmts = parseStmt();
                     if (!while_stmts.has_value()) {
                         // it doesn't matter if m_nested_loops is too high if parsing fails part-way through.
@@ -1282,9 +1283,10 @@ public:
                     }
 
                     stmtWhile->do_while = true;
+                } else {
+                    consume();
                 }
 
-                consume();
                 if (!expect(TokenType::O_PAREN, "Expected open parenthesis")) {
                     return std::nullopt;
                 }
