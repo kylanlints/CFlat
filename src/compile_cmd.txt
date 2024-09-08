@@ -1,0 +1,1 @@
+g++ -std=c++23 -fsanitize=address -I/usr/local/include -L/usr/local/lib -lfmt -g main.cpp -o MAIN_TEST

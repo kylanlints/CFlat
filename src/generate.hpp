@@ -899,7 +899,7 @@ public:
     void gen_paren_start(const T* expr, ExprInf& inf) {
         std::tuple<char, std::string, std::string> put_reg = paren_start<T>(expr, inf);
         gen_expr(expr->rh, inf);
-        if (std::get<0>(put_reg) == 2 && !(--m_o_rax)) {
+        if ((std::get<0>(put_reg) == 2 && !(--m_o_rax)) || (std::get<0>(put_reg) == 0 && inf.use_e < 0)) {
             m_used_regs++;
         }
         if ((std::get<0>(put_reg) == 0 && inf.use_e >= 0) || std::get<0>(put_reg) == 2) {
@@ -910,27 +910,29 @@ public:
         inf.use_e = -1;
     }
 
-    inline void cast(Variable cast_type, bool round_float, ExprInf& inf) {
+    inline std::optional<std::string> cast(Variable cast_type, bool round_float, ExprInf& inf) {
+        std::string cast_instructions;
+
         switch (var_switch(cast_type.type, inf.varType)) {
             case var_switch(VarType::FLOAT, VarType::INT_32):
             case var_switch(VarType::FLOAT, VarType::INT_16):
             case var_switch(VarType::FLOAT, VarType::BYTE):
             {
-                std::string dword_reg = inf.use_e ? " eax, " : ' ' + DWORDS[m_used_regs + 1] + ", ";
+                std::string dword_reg = get_cast_reg_comma(inf, " eax, ", DWORDS); 
                 if (!round_float) {
-                    m_output << "  cvttss2si" + dword_reg + "xmm0\n";
+                    cast_instructions = "  cvttss2si" + dword_reg + "xmm0\n";
                 } else {
-                    m_output << "  cvtss2si" + dword_reg + "xmm0\n";
+                    cast_instructions = "  cvtss2si" + dword_reg + "xmm0\n";
                 }
                 break;
             }
             case var_switch(VarType::FLOAT, VarType::INT_64):
             {
-                std::string qword_reg = inf.use_e ? " rax, " : ' ' + QWORDS[m_used_regs + 1] + ", ";
+                std::string qword_reg = get_cast_reg_comma(inf, " rax, ", QWORDS); 
                 if (!round_float) {
-                    m_output << "  cvttss2si" + qword_reg + "xmm0\n";
+                    cast_instructions = "  cvttss2si" + qword_reg + "xmm0\n";
                 } else {
-                    m_output << "  cvtss2si" + qword_reg + "xmm0\n";
+                    cast_instructions = "  cvtss2si" + qword_reg + "xmm0\n";
                 }
                 break;
             }
@@ -938,21 +940,21 @@ public:
             case var_switch(VarType::DOUBLE, VarType::INT_16):
             case var_switch(VarType::DOUBLE, VarType::BYTE):
             {
-                std::string dword_reg = inf.use_e ? " eax, " : ' ' + DWORDS[m_used_regs + 1] + ", ";
+                std::string dword_reg = get_cast_reg_comma(inf, " eax, ", DWORDS); 
                 if (!round_float) {
-                    m_output << "  cvttsd2si" + dword_reg + "xmm0\n";
+                    cast_instructions = "  cvttsd2si" + dword_reg + "xmm0\n";
                 } else {
-                    m_output << "  cvtsd2si" + dword_reg + "xmm0\n";
+                    cast_instructions = "  cvtsd2si" + dword_reg + "xmm0\n";
                 }
                 break;
             }
             case var_switch(VarType::DOUBLE, VarType::INT_64): 
             {
-                std::string qword_reg = inf.use_e ? " rax, " : ' ' + QWORDS[m_used_regs + 1] + ", ";
+                std::string qword_reg = get_cast_reg_comma(inf, " rax, ", QWORDS);
                 if (!round_float) {
-                    m_output << "  cvttsd2si" + qword_reg + "xmm0\n";
+                    cast_instructions = "  cvttsd2si" + qword_reg + "xmm0\n";
                 } else {
-                    m_output << "  cvtsd2si" + qword_reg + "xmm0\n";
+                    cast_instructions = "  cvtsd2si" + qword_reg + "xmm0\n";
                 }
                 break;
             }
@@ -960,28 +962,28 @@ public:
             case var_switch(VarType::INT_16, VarType::FLOAT):
             case var_switch(VarType::BYTE, VarType::FLOAT):
             {
-                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
-                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", eax\n";
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", eax\n";
                 break;
             }
             case var_switch(VarType::INT_64, VarType::FLOAT):
             {
-                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
-                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", rax\n";
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", rax\n";
                 break;
             }
             case var_switch(VarType::INT_32, VarType::DOUBLE):
             case var_switch(VarType::INT_16, VarType::DOUBLE):
             case var_switch(VarType::BYTE, VarType::DOUBLE):
             {
-                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
-                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", eax\n";
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", eax\n";
                 break;
             }
             case var_switch(VarType::INT_64, VarType::DOUBLE):
             {
-                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
-                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", rax\n";
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", rax\n";
                 break;
             }
             case var_switch(VarType::INT_32, VarType::INT_64):
@@ -989,16 +991,20 @@ public:
             case var_switch(VarType::BYTE, VarType::INT_64):
             {
                 if ((inf.opType == OpType::SINT || inf.opType == OpType::SLONG)) {
-                    if (inf.use_e) {
-                        m_output << "  cdqe\n";
+                    if (inf.use_e - 1) {
+                        cast_instructions = "  cdqe\n";
                     } else {
-                        m_output << "  movsx " + QWORDS[m_used_regs + 1] + ", eax\n";
+                        std::string qword_reg = ' ' + QWORDS[m_used_regs] + ", ";
+                        cast_instructions = "  movsx" + qword_reg + "eax\n";
+                        disable_use_e(inf, qword_reg);
                     }
                 } else {
                     if (inf.use_e) {
-                        m_output << "  mov rax, eax\n";
+                        cast_instructions = "  mov rax, eax\n";
                     } else {
-                        m_output << "  movzx " + QWORDS[m_used_regs + 1] + ", eax\n";
+                        std::string qword_reg = ' ' + QWORDS[m_used_regs + 1] + ", ";
+                        cast_instructions = "  movzx" + qword_reg + "eax\n";
+                        disable_use_e(inf, qword_reg);
                     }
                 }
                 break;
@@ -1012,7 +1018,11 @@ public:
             case var_switch(VarType::FLOAT, VarType::BOOL):
             case var_switch(VarType::DOUBLE, VarType::BOOL):
                 ;//TODO
+            default:
+                return std::nullopt;
         }
+
+        return cast_instructions;
     }
 
     struct Gen_stmt {
@@ -1251,11 +1261,16 @@ public:
             main.gen_term(term, prefix);
         }
         void gen(const NodeExprCast* exprcast, ExprInf& prefix) {
-            ExprInf prev_prefix = prefix;
-            prefix = main.get_expr_inf(exprcast->from_type.type, exprcast->from_type.is_signed);
-            main.gen_term(exprcast->expr, prefix);
-            prefix = prev_prefix;
-            main.cast(exprcast->from_type, exprcast->round_float, prefix);
+            std::optional<std::string> cast_instructions = main.cast(exprcast->from_type, exprcast->round_float, prefix);
+            if (cast_instructions.has_value()) {
+                ExprInf prev_prefix = prefix;
+                prefix = main.get_expr_inf(exprcast->from_type.type, exprcast->from_type.is_signed);
+                main.gen_term(exprcast->expr, prefix);
+                prefix = prev_prefix;
+                main.m_output << cast_instructions.value();
+            } else {
+                main.gen_term(exprcast->expr, prefix);
+            }
         }
         void gen(const NodeExprTwoPart* two_part, ExprInf& prefix) {
             prefix.two_part = true;
@@ -1838,6 +1853,26 @@ private:
             m_float_nums.insert({num, float_mem});
             return float_mem;
         } else return m_float_nums.at(num);
+    }
+
+    inline std::string get_cast_reg_comma(ExprInf& inf, const std::string main_reg, const std::string* other_regs) {
+        if (inf.use_e - 1) { //This might break stuff but so far its fine
+            return main_reg;
+        } else {
+            std::string dword_reg = ' ' + other_regs[m_used_regs] + ", ";
+            disable_use_e(inf, dword_reg);
+            return dword_reg;
+        }
+    }
+
+    inline std::string get_cast_reg(ExprInf& inf, const std::string main_reg, const std::string other_regs[]) {
+        if (inf.use_e - 1) {
+            return main_reg;
+        } else {
+            std::string dword_reg = other_regs[m_used_regs];
+            disable_use_e(inf, dword_reg);
+            return dword_reg;
+        }
     }
 
     inline void make_imm_if_too_big(const int64_t num, const ExprInf& inf) {

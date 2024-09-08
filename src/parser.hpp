@@ -808,7 +808,9 @@ private:
     }
 
     inline long get_last_areg_amt() {
-        if ((!m_lock_main_reg || m_lock_main_reg == m_used_regs) && !m_is_casting) {
+        if (m_is_casting) {
+            return m_expr_pos - m_last_main_reg_ops.back().first; // Casts will take care of the mov thanks to use_e
+        } else if ((!m_lock_main_reg || m_lock_main_reg == m_used_regs)) {
             return m_last_main_reg_ops.back().second - m_last_main_reg_ops.back().first;
         } else {
             m_lock_main_reg--;
@@ -820,17 +822,21 @@ private:
         //this checks if the stuff inside the parenthesis is all constant so it knows if it can use it
         size_t temp_index = m_index + 1;
         size_t num_paren = 0;
+        TokenType token = m_tokens[temp_index].type;
         do {
-            if (m_tokens[temp_index].type == TokenType::IDENT) {
+            if (token == TokenType::IDENT || token == TokenType::K_LONG || 
+                    token == TokenType::K_INT || token == TokenType::K_SHORT || 
+                    token == TokenType::K_BYTE ||token == TokenType::K_BOOL || 
+                    token == TokenType::K_FLOAT || token == TokenType::K_DOUBLE) {
                 return false;
             } else if (m_tokens[temp_index].type == TokenType::O_PAREN) {
                 num_paren += 1;
             } else if (m_tokens[temp_index].type == TokenType::C_PAREN) {
                 num_paren -= 1;
             }
-            temp_index++;
+            token = m_tokens[++temp_index].type;
         } while (temp_index < m_tokens.size() && num_paren > 0);
-
+        
         return true;
     }
 
@@ -2274,9 +2280,9 @@ public:
                             case var_switch(VarType::INT_32, VarType::DOUBLE):
                             case var_switch(VarType::INT_16, VarType::DOUBLE):
                             case var_switch(VarType::BYTE, VarType::DOUBLE):
-                            case var_switch(VarType::INT_64, VarType::DOUBLE):
-                            case var_switch(VarType::INT_64, VarType::INT_32):
-                            case var_switch(VarType::INT_64, VarType::INT_16):
+                            case var_switch(VarType::INT_32, VarType::INT_64):
+                            case var_switch(VarType::INT_16, VarType::INT_64):
+                            case var_switch(VarType::BYTE, VarType::INT_64):
                             case var_switch(VarType::INT_64, VarType::BYTE):
                             case var_switch(VarType::INT_32, VarType::BOOL):
                             case var_switch(VarType::INT_16, VarType::BOOL):
@@ -2285,6 +2291,8 @@ public:
                             case var_switch(VarType::FLOAT, VarType::BOOL):
                             case var_switch(VarType::DOUBLE, VarType::BOOL):
                                 m_is_casting = true;
+                                m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
+                                element_type = ExprElementType::PAREN;
                         }
 
                         exprCast->from_type = m_decided_type;
@@ -2301,7 +2309,6 @@ public:
                         paren->expr = expr;
                         paren->only_too_large_imm = false;
 
-                        element_type = ExprElementType::PAREN;
                         term->var = paren;
                         break;
                     }
@@ -2553,6 +2560,7 @@ public:
         m_index += 2;
 
         std::optional<Token> token = next();
+        
         size_t num_parens = 1;
         while (token.has_value() && token.value().type == TokenType::O_PAREN) {
             ++num_parens;
@@ -2571,7 +2579,7 @@ public:
 
         return 1;
     }
-    //TODO: make constant integer variables read in this
+    
     template <typename T>
     std::optional<T> parseConstExpr(TokenType cur_token_type, bool is_subtraction, bool use_multiplication, bool first_step, 
         long& final_result, size_t& final_index, u_int8_t min_prec = 0) {

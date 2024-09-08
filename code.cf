@@ -1,7 +1,5 @@
 {
     int flag = 0;
-    long hello = (long) flag;
-    float yay = 3 / ((float) hello); 
     for (unsigned long i = 0; 1; i = i + 1) {
         flag = 1;
         for (long j = 2; (unsigned long) j <= i/2; j = j + 1) {
