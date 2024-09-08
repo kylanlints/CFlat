@@ -910,6 +910,111 @@ public:
         inf.use_e = -1;
     }
 
+    inline void cast(Variable cast_type, bool round_float, ExprInf& inf) {
+        switch (var_switch(cast_type.type, inf.varType)) {
+            case var_switch(VarType::FLOAT, VarType::INT_32):
+            case var_switch(VarType::FLOAT, VarType::INT_16):
+            case var_switch(VarType::FLOAT, VarType::BYTE):
+            {
+                std::string dword_reg = inf.use_e ? " eax, " : ' ' + DWORDS[m_used_regs + 1] + ", ";
+                if (!round_float) {
+                    m_output << "  cvttss2si" + dword_reg + "xmm0\n";
+                } else {
+                    m_output << "  cvtss2si" + dword_reg + "xmm0\n";
+                }
+                break;
+            }
+            case var_switch(VarType::FLOAT, VarType::INT_64):
+            {
+                std::string qword_reg = inf.use_e ? " rax, " : ' ' + QWORDS[m_used_regs + 1] + ", ";
+                if (!round_float) {
+                    m_output << "  cvttss2si" + qword_reg + "xmm0\n";
+                } else {
+                    m_output << "  cvtss2si" + qword_reg + "xmm0\n";
+                }
+                break;
+            }
+            case var_switch(VarType::DOUBLE, VarType::INT_32):
+            case var_switch(VarType::DOUBLE, VarType::INT_16):
+            case var_switch(VarType::DOUBLE, VarType::BYTE):
+            {
+                std::string dword_reg = inf.use_e ? " eax, " : ' ' + DWORDS[m_used_regs + 1] + ", ";
+                if (!round_float) {
+                    m_output << "  cvttsd2si" + dword_reg + "xmm0\n";
+                } else {
+                    m_output << "  cvtsd2si" + dword_reg + "xmm0\n";
+                }
+                break;
+            }
+            case var_switch(VarType::DOUBLE, VarType::INT_64): 
+            {
+                std::string qword_reg = inf.use_e ? " rax, " : ' ' + QWORDS[m_used_regs + 1] + ", ";
+                if (!round_float) {
+                    m_output << "  cvttsd2si" + qword_reg + "xmm0\n";
+                } else {
+                    m_output << "  cvtsd2si" + qword_reg + "xmm0\n";
+                }
+                break;
+            }
+            case var_switch(VarType::INT_32, VarType::FLOAT):
+            case var_switch(VarType::INT_16, VarType::FLOAT):
+            case var_switch(VarType::BYTE, VarType::FLOAT):
+            {
+                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
+                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", eax\n";
+                break;
+            }
+            case var_switch(VarType::INT_64, VarType::FLOAT):
+            {
+                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
+                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2ss " + xmm_reg + ", rax\n";
+                break;
+            }
+            case var_switch(VarType::INT_32, VarType::DOUBLE):
+            case var_switch(VarType::INT_16, VarType::DOUBLE):
+            case var_switch(VarType::BYTE, VarType::DOUBLE):
+            {
+                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
+                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", eax\n";
+                break;
+            }
+            case var_switch(VarType::INT_64, VarType::DOUBLE):
+            {
+                std::string xmm_reg = inf.use_e ? "xmm0" : XMMS[m_used_regs + 1];
+                m_output << "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsi2sd " + xmm_reg + ", rax\n";
+                break;
+            }
+            case var_switch(VarType::INT_32, VarType::INT_64):
+            case var_switch(VarType::INT_16, VarType::INT_64):
+            case var_switch(VarType::BYTE, VarType::INT_64):
+            {
+                if ((inf.opType == OpType::SINT || inf.opType == OpType::SLONG)) {
+                    if (inf.use_e) {
+                        m_output << "  cdqe\n";
+                    } else {
+                        m_output << "  movsx " + QWORDS[m_used_regs + 1] + ", eax\n";
+                    }
+                } else {
+                    if (inf.use_e) {
+                        m_output << "  mov rax, eax\n";
+                    } else {
+                        m_output << "  movzx " + QWORDS[m_used_regs + 1] + ", eax\n";
+                    }
+                }
+                break;
+            }
+            case var_switch(VarType::INT_32, VarType::BOOL):
+            case var_switch(VarType::INT_16, VarType::BOOL):
+            case var_switch(VarType::BYTE, VarType::BOOL):
+                //TODO
+            case var_switch(VarType::INT_64, VarType::BOOL):
+                //TODO
+            case var_switch(VarType::FLOAT, VarType::BOOL):
+            case var_switch(VarType::DOUBLE, VarType::BOOL):
+                ;//TODO
+        }
+    }
+
     struct Gen_stmt {
         Generator& main;
 
@@ -1142,8 +1247,15 @@ public:
         void gen(const NodeExprLog* exprlog, ExprInf& prefix) {
             main.gen_log_expr(exprlog, prefix);
         }
-        void gen(const NodeTerm* term, ExprInf& prefix){
+        void gen(const NodeTerm* term, ExprInf& prefix) {
             main.gen_term(term, prefix);
+        }
+        void gen(const NodeExprCast* exprcast, ExprInf& prefix) {
+            ExprInf prev_prefix = prefix;
+            prefix = main.get_expr_inf(exprcast->from_type.type, exprcast->from_type.is_signed);
+            main.gen_term(exprcast->expr, prefix);
+            prefix = prev_prefix;
+            main.cast(exprcast->from_type, exprcast->round_float, prefix);
         }
         void gen(const NodeExprTwoPart* two_part, ExprInf& prefix) {
             prefix.two_part = true;
@@ -1622,6 +1734,25 @@ private:
             default:
                 std::cout << "Something went wrong" << std::endl;
                 return empty;
+        }
+    }
+
+    const OpType get_op_type(const VarType var_type, const bool _signed) {
+        switch (var_type) {
+            case VarType::INT_32:
+            case VarType::INT_16:
+            case VarType::BOOL:
+            case VarType::BYTE:
+                return _signed ? OpType::SINT : OpType::INT;
+            case VarType::INT_64:
+                return _signed ? OpType::SLONG : OpType::LONG;
+            case VarType::FLOAT:
+                return OpType::FLOAT;
+            case VarType::DOUBLE:
+                return OpType::DOUBLE;
+            default:
+                std::cout << "Something went wrong" << std::endl;
+                return OpType::INT;
         }
     }
     

@@ -20,13 +20,14 @@
 #define SHORT_DEF {VarType::INT_16, 2}
 #define BYTE_DEF {VarType::BYTE, 1}
 
+// SPLIT_EXPR_REG_LIMIT determines how many registers must be available for and expression to be split
 constexpr int MAX_REG_NUM = 12;
 constexpr int NON_VOLATILE_REG_NUM = 6;
 constexpr int SPLIT_EXPR_REG_LIMIT = 7;
 constexpr unsigned long IMMEDIATE_BIT_LIMIT_MINUS_ONE = 31;
 constexpr unsigned long MEM_CHUNK_SIZE = 1024 * 512;
 
-enum class VarType {INT_64, INT_32, INT_16, BYTE, BOOL, FLOAT, DOUBLE, UNKNOWN};
+enum class VarType {INT_64, INT_32, INT_16, BYTE, BOOL, FLOAT, DOUBLE, UNKNOWN}; //TODO casting from signed to unsigned or vise-versa should be included in AST
 enum class CompareResult : char {NORMAL = 0, FINAL_NUM = 1, SUB_NUM = 2, SUB_RH_NUM = 3, FORCE_INT_NUM = 4};
 
 const std::unordered_map<TokenType, std::pair<VarType, u_int8_t>> var_associations {
@@ -388,13 +389,19 @@ struct NodeExprLog {
                     NodeExprLogCompareGreaterEquByPar*, NodeExprLogCompareLessEquByPar*> var;
 };
 
+struct NodeExprCast {
+    Variable from_type;
+    bool round_float;
+    NodeTerm* expr;
+};
+
 struct NodeExprTwoPart {
     NodeExpr* first;
     NodeExpr* second;
 };
 
 struct NodeExpr {
-    std::variant<NodeTerm*, NodeExprBin*, NodeExprLog*, NodeExprTwoPart*> var;
+    std::variant<NodeTerm*, NodeExprBin*, NodeExprLog*, NodeExprCast*, NodeExprTwoPart*> var;
 };
 
 /* For properties, last to bits represent if the node is a normal assignment (00),
@@ -502,6 +509,10 @@ bool fits_in_immediate(signed long num, VarType varType) {
     return (check >= -1 && (check <= 0 || (varType != VarType::INT_64 && check <= 1)));
 }
 
+constexpr int var_switch(const VarType type1, const VarType type2) {
+    return (static_cast<int>(type1) << 3) | static_cast<int>(type2);
+}
+
 class Parser {
 private:
     const std::vector<Token> m_tokens;
@@ -510,6 +521,7 @@ private:
     int m_scope_num = 0;
     VarType m_cur_var_type;
     char m_imm_size = 0;
+    bool m_is_casting = false;
     int m_used_regs = 0; // This is all just for the specific edge case where someone makes a stupid expression that requires too many registers
     int m_used_regs_ctr = 0;
     long m_extra_space = 0;
@@ -616,6 +628,24 @@ private:
         strncpy(var_ident, c_str, len);
 
         return var_ident;
+    }
+
+    // returns false if unaccepted type was used
+    bool check_type(const VarType& type, const bool is_signed, VarType& allowed_type) {
+        if (type != allowed_type) {
+            if (allowed_type != VarType::UNKNOWN) {
+                m_index--;
+                error("Unaccepted type");
+                return false;
+            } else {
+                allowed_type = type;
+                m_cur_var_type = allowed_type;
+                m_decided_type.type = allowed_type;
+                m_decided_type.is_signed = is_signed;
+            }
+        } 
+
+        return true;
     }
 
     template <typename T>
@@ -778,16 +808,11 @@ private:
     }
 
     inline long get_last_areg_amt() {
-        if (!m_lock_main_reg) {
+        if ((!m_lock_main_reg || m_lock_main_reg == m_used_regs) && !m_is_casting) {
             return m_last_main_reg_ops.back().second - m_last_main_reg_ops.back().first;
         } else {
-            if (m_lock_main_reg != m_used_regs) {
-                m_lock_main_reg--;
-                return m_expr_pos;
-            } else {
-                m_lock_main_reg--;
-                return m_last_main_reg_ops.back().second - m_last_main_reg_ops.back().first;
-            }                
+            m_lock_main_reg--;
+            return m_expr_pos;            
         }
     }
 
@@ -842,7 +867,7 @@ private:
                 return 255; //255 represents non operator type;
         }
     }
-
+    // TODO: change the way op_type is returned
     u_int8_t op_prec_and_type(TokenType tokenType, OperatorType& op_type)
     {
         switch (tokenType) {
@@ -967,7 +992,7 @@ public:
                     
                     break;
                 default:
-                    goto out; //ik its gross but its the one time gotos are actually kind of necessary
+                    goto out; //its gross but its the one time gotos are actually kind of necessary
             }
         }
         out: //this is scary
@@ -1514,6 +1539,7 @@ public:
         is_cur_expr_dynamic = false;
         is_cur_expr_single = true;
         m_elem_used_test = false;
+        m_is_casting = false;
         m_expr_pos = 0;
         m_last_main_reg_ops.assign({{0, 0}}); //TODO: check situations to make sure vars like m_used_regs are reset with each statement
 
@@ -1556,7 +1582,7 @@ public:
                     error("Bad operator or missing semicolon");
                     return std::nullopt;
                 }
-                if (!full_expr) { // Necessary for too big imm
+                if (!full_expr) { // Necessary for too big imm and casting
                     return expr;
                 }
                 break;
@@ -1766,6 +1792,7 @@ public:
             expr->var = m_two_part_expr.back();
         }
 
+        m_is_casting = false;
         is_expr_too_big_imm = false;
         return expr;
     }
@@ -1876,7 +1903,7 @@ public:
     NodeExprLog* makeLogExpr(NodeExpr*& lh, NodeExpr*& rh, bool lh_used_test, bool rh_used_test) {
         m_use_if_test = false;
         m_expr_pos++;
-        m_last_main_reg_ops.back().second = m_expr_pos;
+        m_last_main_reg_ops.back().second = m_expr_pos; // Conditional statements must use main reg
         if (m_right_element.t == ExprElementType::PAREN) {
             if (!(m_left_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) && m_left_element.t != ExprElementType::PAREN) {
                 return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
@@ -2001,10 +2028,11 @@ public:
     }
 
     std::pair<Variable, bool> parseIfOut() {
-        // reset flags
+        // reset flags except signed and const
         is_cur_expr_dynamic = false;
         is_cur_expr_single = true;
         m_elem_used_test = false;
+        m_is_casting = 0;
         m_expr_pos = 0;
         m_last_main_reg_ops.assign({{0, 0}});
 
@@ -2166,17 +2194,9 @@ public:
                 }
 
                 Variable var = m_variables.at(var_name);
-                if (var.type != allowed_type) {
-                    if (allowed_type != VarType::UNKNOWN) {
-                        m_index--;
-                        error("Unaccepted type");
-                    } else {
-                        allowed_type = var.type;
-                        m_cur_var_type = allowed_type;
-                        m_decided_type.type = allowed_type;
-                        m_decided_type.is_signed = var.is_signed;
-                    }
-                } 
+                if (!check_type(var.type, var.is_signed, allowed_type)) {
+                    return std::nullopt;
+                }
 
                 is_cur_expr_dynamic = true;
 
@@ -2188,6 +2208,105 @@ public:
                 NodeTermParen* paren = allocator.allocate<NodeTermParen>();
 
                 consume();
+
+                if (next(2).has_value()) { // A valid cast must have at least 3 tokens before EOF
+                    bool is_cast = false;
+                    bool round_float = false;
+                    Variable type;
+                    size_t tmp_index = m_index;
+                    if (m_tokens[tmp_index].type == TokenType::TILDE) {
+                        round_float = true;
+                        tmp_index++;
+                    } else {
+                        round_float = false;
+                    }
+                    if (m_tokens[tmp_index].type == TokenType::K_D_UNSIGNED) {
+                        type.is_signed = false;
+                        type.type = VarType::INT_32;
+                        is_cast = true;
+                        tmp_index++;
+                    } else {
+                        type.is_signed = true;
+                    }
+
+                    if (m_tokens[tmp_index].type == TokenType::K_LONG || m_tokens[tmp_index].type == TokenType::K_INT ||
+                        m_tokens[tmp_index].type == TokenType::K_SHORT || m_tokens[tmp_index].type == TokenType::K_BYTE ||
+                        m_tokens[tmp_index].type == TokenType::K_BOOL || m_tokens[tmp_index].type == TokenType::K_FLOAT ||
+                        m_tokens[tmp_index].type == TokenType::K_DOUBLE) {
+                        is_cast = true;
+                        type.type = var_associations.at(m_tokens[tmp_index].type).first;
+                        m_index = tmp_index + 1;
+                    }
+
+                    if (is_cast) {
+                        if (!expect(TokenType::C_PAREN, "Expected closed parenthesis after cast statement")) {
+                            return std::nullopt;
+                        }
+
+                        if (!check_type(type.type, type.is_signed, allowed_type)) {
+                            return std::nullopt;
+                        }
+
+                        NodeExprCast* exprCast = allocator.allocate<NodeExprCast>();
+
+                        exprCast->round_float = round_float;
+                        
+                        VarType new_allowed_type = VarType::UNKNOWN;
+                        std::optional<NodeTerm*> cast_term = parseTerm(new_allowed_type, element_type, expr_element, OperatorType::NONE);
+                        if (!cast_term.has_value()) {
+                            return std::nullopt;
+                        }
+                        
+                        // This is when an actual cast will happen, other situations will do nothing
+                        switch (var_switch(m_decided_type.type, type.type)) {
+                            case var_switch(VarType::FLOAT, VarType::INT_32):
+                            case var_switch(VarType::FLOAT, VarType::INT_16):
+                            case var_switch(VarType::FLOAT, VarType::BYTE):
+                            case var_switch(VarType::FLOAT, VarType::INT_64):
+                            case var_switch(VarType::DOUBLE, VarType::INT_32):
+                            case var_switch(VarType::DOUBLE, VarType::INT_16):
+                            case var_switch(VarType::DOUBLE, VarType::BYTE):
+                            case var_switch(VarType::DOUBLE, VarType::INT_64): 
+                            case var_switch(VarType::INT_32, VarType::FLOAT):
+                            case var_switch(VarType::INT_16, VarType::FLOAT):
+                            case var_switch(VarType::BYTE, VarType::FLOAT):
+                            case var_switch(VarType::INT_64, VarType::FLOAT):
+                            case var_switch(VarType::INT_32, VarType::DOUBLE):
+                            case var_switch(VarType::INT_16, VarType::DOUBLE):
+                            case var_switch(VarType::BYTE, VarType::DOUBLE):
+                            case var_switch(VarType::INT_64, VarType::DOUBLE):
+                            case var_switch(VarType::INT_64, VarType::INT_32):
+                            case var_switch(VarType::INT_64, VarType::INT_16):
+                            case var_switch(VarType::INT_64, VarType::BYTE):
+                            case var_switch(VarType::INT_32, VarType::BOOL):
+                            case var_switch(VarType::INT_16, VarType::BOOL):
+                            case var_switch(VarType::BYTE, VarType::BOOL):
+                            case var_switch(VarType::INT_64, VarType::BOOL):
+                            case var_switch(VarType::FLOAT, VarType::BOOL):
+                            case var_switch(VarType::DOUBLE, VarType::BOOL):
+                                m_is_casting = true;
+                        }
+
+                        exprCast->from_type = m_decided_type;
+                        exprCast->expr = cast_term.value();
+
+                        is_cur_expr_single = false;
+                        allowed_type = type.type;
+                        is_signed = type.is_signed;
+                        m_cur_var_type = allowed_type;
+
+                        NodeExpr* expr = allocator.allocate<NodeExpr>();
+
+                        expr->var = exprCast;
+                        paren->expr = expr;
+                        paren->only_too_large_imm = false;
+
+                        element_type = ExprElementType::PAREN;
+                        term->var = paren;
+                        break;
+                    }
+                }
+
                 m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
                 int prev_used_regs_ctr = m_used_regs_ctr;
                 m_used_regs_ctr++;
@@ -2230,9 +2349,8 @@ public:
                     return std::nullopt;
                 }
                 
-                bool _not;
                 std::optional<Token> next_token = next(1);
-                _not = (token.value().type == TokenType::TILDE);
+                bool _not = (token.value().type == TokenType::TILDE);
                 if (next_token.has_value()) {
                     if (next_token.value().type == TokenType::O_PAREN) {
                         if (is_paren_const()) {
