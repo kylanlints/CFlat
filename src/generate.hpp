@@ -1,5 +1,6 @@
 #pragma once
 
+//#define FMT_HEADER_ONLY
 #include <sstream>
 #include <fmt/format.h>
 #include <map>
@@ -505,7 +506,7 @@ public:
     // only can optimize integer division
     bool optimize_div(const int64_t num, bool is_signed, bool is_long, bool is_float, const NodeExpr* term, ExprInf& inf) {
         if (!num) {
-            std::cout << "Cannot div by zero, ignoring";
+            std::cout << "Cannot div by zero, ignoring\n";
             m_output << "  nop ;bad div by\n";
             return true;
         } else if (num == 1) {
@@ -910,6 +911,7 @@ public:
         inf.use_e = -1;
     }
 
+    // returns std::nullopt if no cast is necessary
     inline std::optional<std::string> cast(Variable cast_type, bool round_float, ExprInf& inf) {
         std::string cast_instructions;
 
@@ -936,6 +938,12 @@ public:
                 }
                 break;
             }
+            case var_switch(VarType::FLOAT, VarType::DOUBLE):
+            {
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtss2sd " + xmm_reg + ", xmm0\n";
+                break;
+            }
             case var_switch(VarType::DOUBLE, VarType::INT_32):
             case var_switch(VarType::DOUBLE, VarType::INT_16):
             case var_switch(VarType::DOUBLE, VarType::BYTE):
@@ -956,6 +964,12 @@ public:
                 } else {
                     cast_instructions = "  cvtsd2si" + qword_reg + "xmm0\n";
                 }
+                break;
+            }
+            case var_switch(VarType::DOUBLE, VarType::FLOAT):
+            {
+                std::string xmm_reg = get_cast_reg(inf, "xmm0", XMMS);
+                cast_instructions = "  xorps " + xmm_reg + ", " + xmm_reg + "\n  cvtsd2ss " + xmm_reg + ", xmm0\n";
                 break;
             }
             case var_switch(VarType::INT_32, VarType::FLOAT):
@@ -1000,10 +1014,10 @@ public:
                     }
                 } else {
                     if (inf.use_e) {
-                        cast_instructions = "  mov rax, eax\n";
+                        return ""; //eax is always zero extended with mov instructions
                     } else {
                         std::string qword_reg = ' ' + QWORDS[m_used_regs + 1] + ", ";
-                        cast_instructions = "  movzx" + qword_reg + "eax\n";
+                        cast_instructions = "  mov" + qword_reg + "rax\n";
                         disable_use_e(inf, qword_reg);
                     }
                 }
@@ -1070,7 +1084,7 @@ public:
             } else {
                 ExprInf inf = main.get_expr_inf(var_assign->type, (var_assign->properties & double_instruc));
                 main.gen_expr(var_assign->expr, inf);
-                std::string mov = (inf.opType == OpType::FLOAT || inf.opType == OpType::DOUBLE) ? "  movss" : "  mov";
+                std::string mov = inf.opType == OpType::FLOAT ? "  movss" : inf.opType == OpType::DOUBLE ? "  movsd" : "  mov";
                 main.m_output << mov + ' ' + main.make_var(var_assign->ident, var_assign->type) + ", " + main.get_a_reg_exact_size(var_assign->type) + '\n';
             }
         }
@@ -1104,7 +1118,7 @@ public:
             } else {
                 ExprInf inf = main.get_expr_inf(var_set->type, (var_set->properties & double_instruc));
                 main.gen_expr(var_set->expr, inf);
-                std::string mov = (inf.opType == OpType::FLOAT || inf.opType == OpType::DOUBLE) ? "  movss" : "  mov";
+                std::string mov = inf.opType == OpType::FLOAT ? "  movss" : inf.opType == OpType::DOUBLE ? "  movsd" : "  mov";
                 main.m_output << mov + ' ' + main.m_variables.at(var_set->ident) + ", " + main.get_a_reg_exact_size(var_set->type) + '\n';
             }
         }
@@ -1265,11 +1279,11 @@ public:
             if (cast_instructions.has_value()) {
                 ExprInf prev_prefix = prefix;
                 prefix = main.get_expr_inf(exprcast->from_type.type, exprcast->from_type.is_signed);
-                main.gen_term(exprcast->expr, prefix);
+                main.gen_expr(exprcast->expr, prefix);
                 prefix = prev_prefix;
                 main.m_output << cast_instructions.value();
             } else {
-                main.gen_term(exprcast->expr, prefix);
+                main.gen_expr(exprcast->expr, prefix);
             }
         }
         void gen(const NodeExprTwoPart* two_part, ExprInf& prefix) {

@@ -10,7 +10,7 @@
 #include <utility>
 #include <cstring>
 
-// All variable type definitions, second number is size
+// All variable type definitions, second number is size //! SDFKSD:KLFJ:LSDF TEST NOT GATE NEG OP AND EXLAM WITH CASTS, MIGHT NOT WORK
 #define INT_DEF {VarType::INT_32, 4}
 #define LONG_DEF {VarType::INT_64, 8}
 #define FLOAT_DEF {VarType::FLOAT, 4}
@@ -27,9 +27,10 @@ constexpr int SPLIT_EXPR_REG_LIMIT = 7;
 constexpr unsigned long IMMEDIATE_BIT_LIMIT_MINUS_ONE = 31;
 constexpr unsigned long MEM_CHUNK_SIZE = 1024 * 512;
 
+// UNKNOWN must be the last enum
 enum class VarType {INT_64, INT_32, INT_16, BYTE, BOOL, FLOAT, DOUBLE, UNKNOWN}; //TODO casting from signed to unsigned or vise-versa should be included in AST
 enum class CompareResult : char {NORMAL = 0, FINAL_NUM = 1, SUB_NUM = 2, SUB_RH_NUM = 3, FORCE_INT_NUM = 4};
-
+//TODO: way in the future remember functions should be run in the order they are written, dont flip two functions
 const std::unordered_map<TokenType, std::pair<VarType, u_int8_t>> var_associations {
     {TokenType::K_INT, INT_DEF},
     {TokenType::K_LONG, LONG_DEF},
@@ -59,16 +60,38 @@ enum class AsmSection {DATA, RODATA, BSS, TEXT};
 template <class... Ts>
 struct overloaded : Ts... { using Ts::operator()...; };
 
-struct NodeExpr;
-
-struct ExprElement {
-    ExprElementType t;
-    NodeExpr* e;
-};
-
 struct Variable {
     VarType type;
     bool is_signed;
+};
+
+struct NodeExpr;
+
+struct NodeTerm;
+
+struct SubExprElement {
+    Variable v;
+    NodeExpr* e;
+};
+
+// ExprElements are meant to skip parenthetical expressions while subexprelements are not
+struct ExprElement {
+    ExprElementType t;
+    Variable v;
+    NodeExpr* e;
+    SubExprElement lh;
+    SubExprElement rh;
+};
+
+struct ExprOut {
+    NodeExpr* expr;
+    SubExprElement expr_element;
+};
+
+struct TermOut {
+    NodeTerm* term;
+    ExprElementType element_type;
+    SubExprElement expr_element;
 };
 
 struct NodeExprBinAdd {
@@ -213,18 +236,18 @@ struct NodeExprBinLRollByPar {
     long last_areg_op;
 };
 
-struct NodeExprBin {
-    std::variant<NodeExprBinAdd*, NodeExprBinSub*, NodeExprBinMul*, NodeExprBinDiv*,
-                    NodeExprBinMod*, NodeExprBinAddByPar*, NodeExprBinSubByPar*, 
-                    NodeExprBinMulByPar*, NodeExprBinDivByPar*, NodeExprBinModByPar*, 
-                    NodeExprBinAnd*, NodeExprBinOr*, NodeExprBinXor*, NodeExprBinAndByPar*, 
-                    NodeExprBinOrByPar*, NodeExprBinXorByPar*, NodeExprBinRShift*, 
-                    NodeExprBinLShift*, NodeExprBinRShiftByPar*, NodeExprBinLShiftByPar*, 
-                    NodeExprBinRRoll*, NodeExprBinLRoll*, NodeExprBinRRollByPar*, 
-                    NodeExprBinLRollByPar*> expr;
-};
+using ExprBinType = std::variant<NodeExprBinAdd*, NodeExprBinSub*, NodeExprBinMul*, NodeExprBinDiv*,
+                                    NodeExprBinMod*, NodeExprBinAddByPar*, NodeExprBinSubByPar*, 
+                                    NodeExprBinMulByPar*, NodeExprBinDivByPar*, NodeExprBinModByPar*, 
+                                    NodeExprBinAnd*, NodeExprBinOr*, NodeExprBinXor*, NodeExprBinAndByPar*, 
+                                    NodeExprBinOrByPar*, NodeExprBinXorByPar*, NodeExprBinRShift*, 
+                                    NodeExprBinLShift*, NodeExprBinRShiftByPar*, NodeExprBinLShiftByPar*, 
+                                    NodeExprBinRRoll*, NodeExprBinLRoll*, NodeExprBinRRollByPar*, 
+                                    NodeExprBinLRollByPar*>;
 
-struct NodeTerm;
+struct NodeExprBin {
+    ExprBinType expr;
+};
 
 struct NodeTermIntLit {
     int64_t bin_num;
@@ -379,20 +402,22 @@ struct NodeExprLogCompareLessEquByPar {
     long last_areg_op;
 };
 
+using ExprLogType = std::variant<NodeExprLogOpAnd*, NodeExprLogOpOr*, NodeExprLogTest*, 
+                                    NodeExprLogCompareEqu*, NodeExprLogCompareNotEqu*,
+                                    NodeExprLogCompareGreater*, NodeExprLogCompareLess*, 
+                                    NodeExprLogCompareGreaterEqu*, NodeExprLogCompareLessEqu*, 
+                                    NodeExprLogCompareEquByPar*, NodeExprLogCompareNotEquByPar*, 
+                                    NodeExprLogCompareGreaterByPar*, NodeExprLogCompareLessByPar*, 
+                                    NodeExprLogCompareGreaterEquByPar*, NodeExprLogCompareLessEquByPar*>;
+
 struct NodeExprLog {
-    std::variant<NodeExprLogOpAnd*, NodeExprLogOpOr*, NodeExprLogTest*, 
-                    NodeExprLogCompareEqu*, NodeExprLogCompareNotEqu*,
-                    NodeExprLogCompareGreater*, NodeExprLogCompareLess*, 
-                    NodeExprLogCompareGreaterEqu*, NodeExprLogCompareLessEqu*, 
-                    NodeExprLogCompareEquByPar*, NodeExprLogCompareNotEquByPar*, 
-                    NodeExprLogCompareGreaterByPar*, NodeExprLogCompareLessByPar*, 
-                    NodeExprLogCompareGreaterEquByPar*, NodeExprLogCompareLessEquByPar*> var;
+    ExprLogType var;
 };
 
 struct NodeExprCast {
     Variable from_type;
     bool round_float;
-    NodeTerm* expr;
+    NodeExpr* expr;
 };
 
 struct NodeExprTwoPart {
@@ -521,7 +546,7 @@ private:
     int m_scope_num = 0;
     VarType m_cur_var_type;
     char m_imm_size = 0;
-    bool m_is_casting = false;
+    char m_is_casting = 0;
     int m_used_regs = 0; // This is all just for the specific edge case where someone makes a stupid expression that requires too many registers
     int m_used_regs_ctr = 0;
     long m_extra_space = 0;
@@ -531,11 +556,14 @@ private:
     int m_lock_main_reg = 0;
     ExprElement m_left_element;
     ExprElement m_right_element; 
+    Variable m_last_left_elem_var_type;
+    Variable m_last_right_elem_var_type;
     bool m_used_explicit_paren = false;
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
     bool m_in_if_stmt = false;
     size_t m_nested_loops = 0;
+    Variable m_orig_allowed_type;
     Variable m_decided_type;
     bool m_last_imm_truth;
     std::vector<NodeExprTwoPart*> m_two_part_expr;
@@ -630,20 +658,27 @@ private:
         return var_ident;
     }
 
-    // returns false if unaccepted type was used
-    bool check_type(const VarType& type, const bool is_signed, VarType& allowed_type) {
-        if (type != allowed_type) {
+    inline void append_to_last_areg() {
+        m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
+    }
+
+    // returns 0 if unaccepted type was used, updates allowed_type if implicit cast will be used and returns 2 to indicate element_type update
+    bool check_type(const VarType& type, const bool is_term_signed, VarType& allowed_type) {
+        if (type != allowed_type || type != m_orig_allowed_type.type) { //TODO: signed casts
             if (allowed_type != VarType::UNKNOWN) {
-                m_index--;
-                error("Unaccepted type");
-                return false;
+                m_is_casting = 2;
+                allowed_type = type; // implicit cast
+                return true;
+                // m_index--; //TODO: when structs are added this error should happen
+                // error("Unaccepted type");
+                // return false;
             } else {
                 allowed_type = type;
                 m_cur_var_type = allowed_type;
                 m_decided_type.type = allowed_type;
-                m_decided_type.is_signed = is_signed;
+                m_decided_type.is_signed = is_term_signed;
             }
-        } 
+        }
 
         return true;
     }
@@ -807,8 +842,8 @@ private:
         }
     }
 
-    inline long get_last_areg_amt() {
-        if (m_is_casting) {
+    inline long get_last_areg_amt(bool casted) {
+        if (m_is_casting || casted) {
             return m_expr_pos - m_last_main_reg_ops.back().first; // Casts will take care of the mov thanks to use_e
         } else if ((!m_lock_main_reg || m_lock_main_reg == m_used_regs)) {
             return m_last_main_reg_ops.back().second - m_last_main_reg_ops.back().first;
@@ -838,6 +873,197 @@ private:
         } while (temp_index < m_tokens.size() && num_paren > 0);
         
         return true;
+    }
+
+    inline void update_areg_val(NodeExpr* expr, size_t last_areg) {
+        auto set_last_areg_sub = overloaded {
+            [&last_areg](NodeExprBinAddByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinSubByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinMulByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinDivByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinModByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinAndByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinOrByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinXorByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinLShiftByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinRShiftByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinLRollByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprBinRRollByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareEquByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareNotEquByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareLessByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareLessEquByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareGreaterByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](NodeExprLogCompareGreaterEquByPar* arg) {unsigned long& ref = (unsigned long&) arg->last_areg_op; ref = last_areg;},
+            [&last_areg](auto&& arg) {;}
+        };
+
+        auto set_last_areg = overloaded {
+            [&set_last_areg_sub](NodeExprBin* arg) {std::visit(set_last_areg_sub, arg->expr);},
+            [&set_last_areg_sub](NodeExprLog* arg) {std::visit(set_last_areg_sub, arg->var);},
+            [&set_last_areg_sub](auto&& arg) {;}
+        };
+
+        std::visit(set_last_areg, expr->var);
+    }
+
+    // This function does lead to a slight excess in heap memory allocated but it is necessary to 
+    // conform to C++ type standards while using std::variant
+    template <typename T1, typename target_type>
+    void switch_node_type(T1& parent, NodeExpr*& lh, NodeExpr*& rh) {
+        target_type* new_struct = allocator.allocate<target_type>();
+        new_struct->lh = lh;
+        new_struct->rh = rh;
+
+        parent.template emplace<target_type*>(new_struct);
+    }
+
+    // a horrid function that shouldnt actually take that long
+    void switch_to_paren(NodeExpr* parent_expr) {
+        // modern C++ garbage that is so complex it lagged my computer typing it
+        auto switch_to_paren_sub = overloaded {
+            [this](NodeExprBinAdd*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinAddByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinSub*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinSubByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinMul*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinMulByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinDiv*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinDivByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinMod*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinModByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinAnd*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinAndByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinOr*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinOrByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinXor*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinXorByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinLShift*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinLShiftByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinRShift*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinRShiftByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinLRoll*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinLRollByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprBinRRoll*& arg, ExprBinType& parent) {switch_node_type<ExprBinType, NodeExprBinRRollByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareEqu*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareEquByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareNotEqu*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareNotEquByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareLess*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareLessByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareLessEqu*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareLessEquByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareGreater*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareGreaterByPar>(parent, arg->lh, arg->rh);},
+            [this](NodeExprLogCompareGreaterEqu*& arg, ExprLogType& parent) {switch_node_type<ExprLogType, NodeExprLogCompareGreaterEquByPar>(parent, arg->lh, arg->rh);},
+            [this](auto&& arg, ExprBinType parent) {;},
+            [this](auto&& arg, ExprLogType parent) {;}
+        };
+
+        auto switch_to_paren = overloaded {
+            [&switch_to_paren_sub](NodeExprBin*& arg) {std::visit([&arg, &switch_to_paren_sub](auto&& arg2) {switch_to_paren_sub(arg2, arg->expr);}, arg->expr);},
+            [&switch_to_paren_sub](NodeExprLog*& arg) {std::visit([&arg, &switch_to_paren_sub](auto&& arg2) {switch_to_paren_sub(arg2, arg->var);}, arg->var);},
+            [&switch_to_paren_sub](auto&& arg) {;}
+        };
+
+        std::visit(switch_to_paren, parent_expr->var);
+        update_areg_val(parent_expr, m_expr_pos - m_last_main_reg_ops.back().first - 1); // subtract 1 due to secondary level of tree
+    }
+
+    // returns pointer to cast node
+    [[nodiscard]] NodeExprCast* insert_cast(NodeExpr* expr, Variable from_type) {
+        NodeExprCast* cast_expr = allocator.allocate<NodeExprCast>();
+        NodeExpr* new_expr = allocator.allocate<NodeExpr>();
+
+        new_expr->var = expr->var;
+        cast_expr->expr = new_expr;
+        cast_expr->from_type = from_type; 
+        cast_expr->round_float = false;
+
+        return cast_expr; 
+    }
+
+    // returns 1 if right side had a cast added to it (false if entire tree had a cast added)
+    inline bool insert_implicit_casts_single(ExprElement& element, Variable adjacent_type, bool final = false) {
+        if (element.lh.v.type != element.rh.v.type) {
+            if (!final) {
+                // Floats are prioritized so that they are only floored at the end
+                if (element.lh.v.type == VarType::FLOAT || element.lh.v.type == VarType::DOUBLE) {
+                    element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
+                    element.v = element.lh.v;
+                    switch_to_paren(element.e);
+                    return true;
+                } else if (element.rh.v.type == VarType::FLOAT || element.rh.v.type == VarType::DOUBLE) {
+                    element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
+                    element.v = element.rh.v;
+                    return false;
+                }
+                // Longs are prioritized so that information isnt lost until the end
+                if (element.lh.v.type == VarType::INT_64) {
+                    element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
+                    element.v = element.lh.v;
+                    switch_to_paren(element.e);
+                    return true;
+                } else if (element.rh.v.type == VarType::INT_64) {
+                    element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
+                    element.v = element.rh.v;
+                    return false;
+                }
+            }
+
+            element.v = adjacent_type;
+            if (element.lh.v.type != adjacent_type.type) {
+                element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
+            }
+            if (element.rh.v.type != adjacent_type.type) {
+                element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
+                switch_to_paren(element.e);
+                return true;
+            }
+            return false;
+        }
+
+        if (element.lh.v.type != adjacent_type.type) {
+            element.e->var = insert_cast(element.e, element.lh.v);
+            element.v = adjacent_type;
+            return false;
+        }
+        // implicit signed casts, helps with optimization
+        if (element.lh.v.is_signed != adjacent_type.is_signed) {
+            element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
+        }
+        if (element.rh.v.is_signed != adjacent_type.is_signed) {
+            element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
+        }
+        
+        element.v = Variable{.type = element.lh.v.type, .is_signed = adjacent_type.is_signed};
+        return false;
+    }
+
+    inline bool insert_implicit_casts_doub_par() {
+        std::array<int, static_cast<int>(VarType::UNKNOWN)> counts = {0}; // UNKNOWN is the last element and thus gives number of enums
+
+        counts[static_cast<int>(m_left_element.lh.v.type)]++;
+        counts[static_cast<int>(m_left_element.rh.v.type)]++;
+        counts[static_cast<int>(m_right_element.lh.v.type)]++;
+        counts[static_cast<int>(m_right_element.rh.v.type)]++;
+
+        auto most_common_index = std::distance(counts.begin(), std::max_element(counts.begin(), counts.end()));
+
+        Variable most_common = Variable{static_cast<VarType>(most_common_index), is_signed};
+
+        insert_implicit_casts_single(m_left_element, most_common);
+        return insert_implicit_casts_single(m_right_element, most_common) == 2;
+    }
+
+    inline bool insert_implicit_casts() {
+        if (m_left_element.t == ExprElementType::PAREN) {
+            if (m_right_element.t == ExprElementType::PAREN) {
+                return insert_implicit_casts_doub_par();
+            } else {
+                return insert_implicit_casts_single(m_left_element, m_right_element.v);
+            }
+        } else if (m_right_element.t == ExprElementType::PAREN) {
+            return insert_implicit_casts_single(m_right_element, m_left_element.v);
+        }
+
+        return false;
+    }
+
+    inline void insert_last_implicit_cast(NodeExpr* final_expr) {
+        if (!is_cur_expr_single) {
+            if (insert_implicit_casts_single(m_right_element, m_orig_allowed_type, true)) {
+                if (m_right_element.t == ExprElementType::PAREN) {
+                    update_areg_val(final_expr, 1);
+                }
+            }
+        } else if (m_right_element.v.type != m_orig_allowed_type.type || m_right_element.v.is_signed != m_orig_allowed_type.is_signed) {
+            m_right_element.e->var = insert_cast(m_right_element.e, m_right_element.v);
+        }
     }
 
     // in this language bitwise operators have the same precidence as multiplication
@@ -918,12 +1144,20 @@ private:
         }
     }
 
-    inline void update_lh_elem(ExprElementType type, NodeExpr* expr) {
+    inline void update_rh_elem_full(ExprElementType type, Variable var_type, SubExprElement lh, SubExprElement rh, NodeExpr* expr) {
+        m_right_element.lh = lh;
+        m_right_element.rh = rh;
+        m_right_element.t = type;
+        m_right_element.v = var_type;
+        m_right_element.e = expr;
+    }
+
+    inline void update_lh_elem_type(ExprElementType type, NodeExpr* expr) {
         m_left_element.t = type;
         m_left_element.e = expr;
     }
 
-    inline void update_rh_elem(ExprElementType type, NodeExpr* expr) {
+    inline void update_rh_elem_type(ExprElementType type, NodeExpr* expr) {
         m_right_element.t = type;
         m_right_element.e = expr;
     }
@@ -1018,6 +1252,7 @@ public:
                 std::optional<Token> ident = next();
                 VarType type = var_associations.at(tokenType).first;
                 m_cur_var_type = type;
+                m_orig_allowed_type = Variable{.type = type, .is_signed = is_signed};
                 m_stack_bytes += var_associations.at(tokenType).second;
                 const char* name;
 
@@ -1035,16 +1270,18 @@ public:
                     return std::nullopt;
                 }
                 
-                std::optional<NodeExpr*> expr = parseExpr(type);
+                std::optional<ExprOut> expr = parseExpr(type);
                 if (!expr.has_value()) {
                     return std::nullopt;
                 }
+
+                insert_last_implicit_cast(expr.value().expr);
 
                 NodeStmtVarAssign* var_assign = allocator.allocate<NodeStmtVarAssign>();
 
                 var_assign->ident = name;
                 var_assign->type = type;
-                var_assign->expr = expr.value();
+                var_assign->expr = expr.value().expr;
 
                 if (type == VarType::FLOAT) {
                     var_assign->properties |= float_instruc;
@@ -1120,21 +1357,24 @@ public:
                 Variable var = m_variables.at(var_name);
 
                 m_cur_var_type = var.type;
+                m_orig_allowed_type = Variable{.type = var.type, .is_signed = is_signed};
 
                 if (!expect(TokenType::EQU, "Expected '='")) {
                     return std::nullopt;
                 }
                 
-                std::optional<NodeExpr*> expr = parseExpr(var.type);
+                std::optional<ExprOut> expr = parseExpr(var.type);
                 if (!expr.has_value()) {
                     return std::nullopt;
                 }
+
+                insert_last_implicit_cast(expr.value().expr);
 
                 NodeStmtVarSet* var_set = allocator.allocate<NodeStmtVarSet>();
 
                 var_set->type = var.type;
                 var_set->ident = ident;
-                var_set->expr = expr.value();
+                var_set->expr = expr.value().expr;
 
                 if (var.type == VarType::FLOAT) {
                     var_set->properties |= float_instruc;
@@ -1493,12 +1733,14 @@ public:
                 NodeStmtExit* stmtExit = allocator.allocate<NodeStmtExit>();
 
                 m_cur_var_type = VarType::INT_64;
-                std::optional<NodeExpr*> expr = parseExpr(VarType::INT_64);
+                std::optional<ExprOut> expr = parseExpr(VarType::INT_64);
                 if (!expr.has_value()) {
                     return std::nullopt;
                 }
 
-                stmtExit->val = expr.value();
+                insert_last_implicit_cast(expr.value().expr);
+
+                stmtExit->val = expr.value().expr;
                 stmt->stmt = stmtExit;
 
                 if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
@@ -1545,9 +1787,9 @@ public:
         is_cur_expr_dynamic = false;
         is_cur_expr_single = true;
         m_elem_used_test = false;
-        m_is_casting = false;
+        m_is_casting = 0;
         m_expr_pos = 0;
-        m_last_main_reg_ops.assign({{0, 0}}); //TODO: check situations to make sure vars like m_used_regs are reset with each statement
+        //m_last_main_reg_ops.assign({{0, 0}}); //TODO: check situations to make sure vars like m_used_regs are reset with each statement
 
         return stmt;
     }
@@ -1555,24 +1797,26 @@ public:
     //!Flip expression for types of short or lower which use immediate on the right side
     // meat
     // Most of the parser's important parts are in this function, parseExpr handles all mathmatical expressons,
-    // if statements, optimization of communitive operations, and splitting expressions into two parts if more
+    // if statements, optimization of commutative operations, and splitting expressions into two parts if more
     // memory would be required to normally compute them
-    std::optional<NodeExpr*> parseExpr(VarType allowed_type, u_int8_t min_prec = 0, OperatorType op_type = OperatorType::NONE) { 
+    std::optional<ExprOut> parseExpr(VarType allowed_type, u_int8_t min_prec = 0, OperatorType op_type = OperatorType::NONE) { 
         NodeExpr* expr = allocator.allocate<NodeExpr>();
+        SubExprElement expr_element;
         bool full_expr = false;
         bool used_two_part = false;
         long lh_by_parens = 0;
         int two_parts = -1;
                               
-        ExprElementType element_type = ExprElementType::MEMORY;
-        NodeExpr* expr_element = expr;
-        std::optional<NodeTerm*> lh = parseTerm(allowed_type, element_type, expr_element, op_type);
-        if (!lh.has_value()) {
-            successful = false;
+        std::optional<TermOut> term_out = parseTerm(allowed_type, expr, op_type);
+        if (!term_out.has_value()) {
             return std::nullopt;
         }
 
-        expr->var = lh.value();
+        TermOut lh = term_out.value();
+        std::optional<ExprOut> rh_expr = ExprOut{};
+
+        expr->var = lh.term;
+        expr_element = lh.expr_element;
 
         while (true) {
             std::optional<Token> next_token = next();
@@ -1583,37 +1827,41 @@ public:
             OperatorType op_type;
             u_int8_t prec = op_prec_and_type(next_token.value().type, op_type);
             if (prec == 255) {
-                update_rh_elem(element_type, expr_element);
+                if (!m_used_explicit_paren) {
+                    update_rh_elem_full(lh.element_type, lh.expr_element.v, lh.expr_element, rh_expr.value().expr_element, expr_element.e);
+                }
                 if (next_token.value().type != TokenType::C_PAREN && next_token.value().type != TokenType::SEMI) {
                     error("Bad operator or missing semicolon");
                     return std::nullopt;
                 }
                 if (!full_expr) { // Necessary for too big imm and casting
-                    return expr;
+                    return ExprOut{.expr = expr, .expr_element = expr_element};
                 }
                 break;
-            } else if (min_prec > 0 && !full_expr && !m_used_explicit_paren) {
-                m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
+            } else if (prec >= min_prec && min_prec != 0 && !full_expr && !m_used_explicit_paren) {
+                append_to_last_areg();
             }
             m_used_explicit_paren = false;
 
             if (prec < min_prec) {
-                update_rh_elem(element_type, expr_element);
+                update_rh_elem_full(lh.element_type, lh.expr_element.v, lh.expr_element, rh_expr.value().expr_element, lh.expr_element.e); //TODO
                 break;
             }
 
             bool lh_used_test = m_elem_used_test;
-            m_elem_used_test = false;        
+            m_elem_used_test = false; 
 
             consume();
-            std::optional<NodeExpr*> rh = parseExpr(allowed_type, prec + 1, op_type);
-            if (!rh.has_value()) {
+            rh_expr = parseExpr(allowed_type, prec + 1, op_type);
+            if (!rh_expr.has_value()) {
                 successful = false;
                 return std::nullopt;
             }
 
+            NodeExpr* rh = rh_expr.value().expr;
+
             if (!full_expr) {
-                update_lh_elem(element_type, expr_element);
+                update_lh_elem_type(lh.element_type, lh.expr_element.e);
             }
 
             bool rh_used_test = m_elem_used_test;
@@ -1649,6 +1897,12 @@ public:
             } else {
                 *expr_cpy = *expr;
             }
+
+            lh.expr_element.e = expr_cpy;
+            m_left_element.lh = lh.expr_element;
+            m_left_element.rh = rh_expr.value().expr_element;
+            m_left_element.v = lh.expr_element.v;
+
             // there is a lot of convenient stuff with expression flipping that happens that allows
             // use_e to work in generate.hpp
 
@@ -1660,13 +1914,13 @@ public:
                     bool rh_im = m_right_element.t == ExprElementType::IMMEDIATE;
                     if (m_right_element.t == ExprElementType::PAREN) {
                         bool flip = (m_left_element.t != ExprElementType::PAREN && (is_signed || !lh_im) && !is_expr_too_big_imm);
-                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, !flip, 
+                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh, lh_by_parens, !flip, 
                             (lh_im ? flip ? 2 : 1 : 0), flip, flip);
                     } else if (rh_im && (!is_signed || is_expr_too_big_imm)) {
-                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, 
+                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh, lh_by_parens, 
                             (m_left_element.t == ExprElementType::PAREN), 1, false, true);
                     } else {
-                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh.value(), lh_by_parens, false, 
+                        expr->var = makeBinExpr<NodeExprBinMul, NodeExprBinMulByPar>(expr_cpy, rh, lh_by_parens, false, 
                             (lh_im ? 1 : rh_im ? 2 : 0), (m_left_element.t == ExprElementType::PAREN), false);
                     }
                     if (!is_signed) {
@@ -1677,15 +1931,15 @@ public:
                 }
                 case TokenType::PLUS:
                 {
-                    expr->var = makeBinExprCommunitive<NodeExprBinAdd, NodeExprBinAddByPar>(expr_cpy, rh.value(), lh_by_parens);
+                    expr->var = makeBinExprCommutative<NodeExprBinAdd, NodeExprBinAddByPar>(expr_cpy, rh, lh_by_parens);
                     break;
                 }
                 case TokenType::HYPHEN:
-                    expr->var = makeBinExpr<NodeExprBinSub, NodeExprBinSubByPar>(expr_cpy, rh.value(), lh_by_parens, 
+                    expr->var = makeBinExpr<NodeExprBinSub, NodeExprBinSubByPar>(expr_cpy, rh, lh_by_parens, 
                         (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     break;
                 case TokenType::SLASH:
-                    expr->var = makeBinExpr<NodeExprBinDiv, NodeExprBinDivByPar>(expr_cpy, rh.value(), lh_by_parens, 
+                    expr->var = makeBinExpr<NodeExprBinDiv, NodeExprBinDivByPar>(expr_cpy, rh, lh_by_parens, 
                         (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     if (m_cur_var_type != VarType::FLOAT && m_cur_var_type != VarType::DOUBLE) {
                         m_last_main_reg_ops.back().second = m_expr_pos + 1;
@@ -1696,81 +1950,83 @@ public:
                         error("Cannot use modulus on float operands");
                         return std::nullopt;
                     }
-                    expr->var = makeBinExpr<NodeExprBinMod, NodeExprBinModByPar>(expr_cpy, rh.value(), lh_by_parens, 
+                    expr->var = makeBinExpr<NodeExprBinMod, NodeExprBinModByPar>(expr_cpy, rh, lh_by_parens, 
                         (m_right_element.t == ExprElementType::PAREN), (m_right_element.t == ExprElementType::IMMEDIATE), false, false);
                     m_last_main_reg_ops.back().second = m_expr_pos + 1;
                     break;
                 case TokenType::AMPERSAND:
-                    if (!makeBinExprBitwise<NodeExprBinAnd, NodeExprBinAndByPar, false>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinAnd, NodeExprBinAndByPar, false>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::PIPE:
-                    if (!makeBinExprBitwise<NodeExprBinOr, NodeExprBinOrByPar, false>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinOr, NodeExprBinOrByPar, false>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::CARAT:
-                    if (!makeBinExprBitwise<NodeExprBinXor, NodeExprBinXorByPar, false>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinXor, NodeExprBinXorByPar, false>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::DOUB_GREATER:
-                    if (!makeBinExprBitwise<NodeExprBinRShift, NodeExprBinRShiftByPar, true>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinRShift, NodeExprBinRShiftByPar, true>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::DOUB_LESS:
-                    if (!makeBinExprBitwise<NodeExprBinLShift, NodeExprBinLShiftByPar, true>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinLShift, NodeExprBinLShiftByPar, true>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::CARAT_GREATER:
-                    if (!makeBinExprBitwise<NodeExprBinRRoll, NodeExprBinRRollByPar, true>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinRRoll, NodeExprBinRRollByPar, true>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::LESS_CARAT:
-                    if (!makeBinExprBitwise<NodeExprBinLRoll, NodeExprBinLRollByPar, true>(expr, expr_cpy, rh.value(), lh_by_parens)) {
+                    if (!makeBinExprBitwise<NodeExprBinLRoll, NodeExprBinLRollByPar, true>(expr, expr_cpy, rh, lh_by_parens)) {
                         return std::nullopt;
                     }
                     break;
                 case TokenType::DOUB_EQU:
                     expr->var = makeLogExpr<NodeExprLogCompareEqu, NodeExprLogCompareEquByPar, NodeExprLogCompareEqu>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::EXCLAM_EQU:
                     expr->var = makeLogExpr<NodeExprLogCompareNotEqu, NodeExprLogCompareNotEquByPar, NodeExprLogCompareNotEqu>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::GREATER:
                     expr->var = makeLogExpr<NodeExprLogCompareGreater, NodeExprLogCompareGreaterByPar, NodeExprLogCompareLess>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::LESS:
                     expr->var = makeLogExpr<NodeExprLogCompareLess, NodeExprLogCompareLessByPar, NodeExprLogCompareGreater>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::GREATER_EQU:
                     expr->var = makeLogExpr<NodeExprLogCompareGreaterEqu, NodeExprLogCompareGreaterEquByPar, NodeExprLogCompareLessEqu>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::LESS_EQU:
                     expr->var = makeLogExpr<NodeExprLogCompareLessEqu, NodeExprLogCompareLessEquByPar, NodeExprLogCompareGreaterEqu>(
-                                            expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                                            expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::DOUB_AMPERSAND:
-                    expr->var = makeLogExprOp<NodeExprLogOpAnd>(expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                    expr->var = makeLogExprOp<NodeExprLogOpAnd>(expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 case TokenType::DOUB_PIPE:
-                    expr->var = makeLogExprOp<NodeExprLogOpOr>(expr_cpy, rh.value(), lh_used_test, rh_used_test);
+                    expr->var = makeLogExprOp<NodeExprLogOpOr>(expr_cpy, rh, lh_used_test, rh_used_test);
                     break;
                 default:
                     error("Something went very wrong");
                     return std::nullopt;
             }
             
-            update_lh_elem(ExprElementType::PAREN, expr_element);
+            m_last_left_elem_var_type = m_left_element.v;
+            expr_element.e = expr;
+            update_lh_elem_type(ExprElementType::PAREN, lh.expr_element.e);
             full_expr = true;
         }
         
@@ -1780,7 +2036,7 @@ public:
         // int x = (5 * y) + (z * 8)
         // So that way it can store everything in the right registers
         if (full_expr) {
-            update_rh_elem(ExprElementType::PAREN, expr_element);
+            update_rh_elem_type(ExprElementType::PAREN, expr_element.e);
         }
 
         if (used_two_part) {
@@ -1798,13 +2054,13 @@ public:
             expr->var = m_two_part_expr.back();
         }
 
-        m_is_casting = false;
+        m_is_casting = 0;
         is_expr_too_big_imm = false;
-        return expr;
+        return ExprOut{.expr = expr, .expr_element = expr_element};
     }
 
     template <typename T, typename T2>
-    inline NodeExprBin* makeBinExprCommunitive(NodeExpr*& expr_cpy, NodeExpr*& rh, long& lh_by_parens) {
+    inline NodeExprBin* makeBinExprCommutative(NodeExpr*& expr_cpy, NodeExpr*& rh, long& lh_by_parens) {
         bool lh_im = m_left_element.t == ExprElementType::IMMEDIATE;
         bool rh_im = m_right_element.t == ExprElementType::IMMEDIATE;
         if (m_right_element.t == ExprElementType::PAREN) {
@@ -1825,7 +2081,7 @@ public:
             return false;
         }
         if constexpr (!shift) {
-            expr->var = makeBinExprCommunitive<T, T2>(expr_cpy, rh, lh_by_parens);
+            expr->var = makeBinExprCommutative<T, T2>(expr_cpy, rh, lh_by_parens);
             return true;
         } else {
             expr->var = makeBinExpr<T, T2>(expr_cpy, rh, lh_by_parens, 
@@ -1873,6 +2129,8 @@ public:
             operation->lh_paren = lh_paren;
         }
 
+        bool rh_casted = insert_implicit_casts();
+
         if constexpr (std::is_same_v<T, NodeExprBinAddByPar> || std::is_same_v<T, NodeExprBinSubByPar> || 
                         std::is_same_v<T, NodeExprBinMulByPar> || std::is_same_v<T, NodeExprBinDivByPar> ||
                         std::is_same_v<T, NodeExprBinModByPar> || std::is_same_v<T, NodeExprBinAndByPar> || 
@@ -1881,7 +2139,7 @@ public:
                         std::is_same_v<T, NodeExprBinRRollByPar> || std::is_same_v<T, NodeExprBinLRollByPar>) {
             // Conveniently this actually still works if the expression is flipped based on the flip conditions
             // (expressions which are flipped can't have a_reg ops on right side since that would be a paren statement)
-            operation->last_areg_op = get_last_areg_amt();
+            operation->last_areg_op = get_last_areg_amt(rh_casted);
             m_last_main_reg_ops.pop_back();
         }
 
@@ -1912,17 +2170,20 @@ public:
         m_last_main_reg_ops.back().second = m_expr_pos; // Conditional statements must use main reg
         if (m_right_element.t == ExprElementType::PAREN) {
             if (!(m_left_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) && m_left_element.t != ExprElementType::PAREN) {
+                std::swap(m_left_element, m_right_element);
                 return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
                 return makeLogExprS<T2>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
             }
         } else if (m_right_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) {
             if (m_left_element.t == ExprElementType::PAREN) {
+                std::swap(m_left_element, m_right_element);
                 return makeLogExprS<T2>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
                 return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             }
         } else if (m_left_element.t == ExprElementType::IMMEDIATE && m_right_element.t == ExprElementType::MEMORY) {
+            std::swap(m_left_element, m_right_element);
             return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
         } else {
             return makeLogExprS<T>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
@@ -1940,6 +2201,7 @@ public:
 
         CompareResult num_result_val;
         // I am so utterly completely confused why the () ref = () arg is necesssary but it doesnt compile without it
+        // TODO: could maybe replace this with a [[assume]]
         auto set_num_result = overloaded {
             [&num_result_val](auto&& arg) {CompareResult& ref = (CompareResult&) arg->num_result; ref = num_result_val;},
             [&num_result_val](NodeExprLogTest* arg) {;}
@@ -1959,6 +2221,8 @@ public:
             num_result_val = CompareResult::SUB_NUM;
             std::visit(set_num_result, std::get<NodeExprLog*>(rh_skip_par->var)->var);
         }
+
+        bool rh_casted = insert_implicit_casts();
         
         if constexpr (std::is_same_v<T, NodeExprLogCompareEqu> || std::is_same_v<T, NodeExprLogCompareNotEqu> ||
                         std::is_same_v<T, NodeExprLogCompareGreater> || std::is_same_v<T, NodeExprLogCompareGreaterEqu> ||
@@ -1970,7 +2234,7 @@ public:
             if (lh_used_test && rh_used_test) { // Not optimal but much cleaner
                 operation->comp_as_int = true;
             }
-            operation->last_areg_op = get_last_areg_amt();
+            operation->last_areg_op = get_last_areg_amt(rh_casted);
             m_last_main_reg_ops.pop_back();
         }
         
@@ -2020,17 +2284,19 @@ public:
         m_use_if_test = true;
         m_decided_type.type = VarType::UNKNOWN;
 
-        std::optional<NodeExpr*> if_expr = parseExpr(VarType::UNKNOWN);
+        std::optional<ExprOut> if_expr = parseExpr(VarType::UNKNOWN);
         if (!if_expr.has_value()) {
             return std::nullopt;
         }
 
-        add_if_test(if_expr.value(), m_right_element.t);
+        insert_last_implicit_cast(if_expr.value().expr);
+
+        add_if_test(if_expr.value().expr, m_right_element.t);
 
         m_use_if_test = false;
         m_in_if_stmt = false;
 
-        return if_expr;
+        return if_expr.value().expr;
     }
 
     std::pair<Variable, bool> parseIfOut() {
@@ -2040,7 +2306,7 @@ public:
         m_elem_used_test = false;
         m_is_casting = 0;
         m_expr_pos = 0;
-        m_last_main_reg_ops.assign({{0, 0}});
+        //m_last_main_reg_ops.assign({{0, 0}});
 
         return std::pair<Variable, bool>{m_decided_type, m_last_imm_truth};
     }
@@ -2055,7 +2321,8 @@ public:
         return node;
     }
 
-    std::optional<NodeTerm*> parseTerm(VarType& allowed_type, ExprElementType& element_type, NodeExpr*& expr_element, const OperatorType& op_type) {
+    // allowed_type and expr_element should be copied
+    std::optional<TermOut> parseTerm(VarType& allowed_type, NodeExpr* expr_element, const OperatorType& op_type) {
         NodeTerm* term = allocator.allocate<NodeTerm>();
 
         std::optional<Token> token = next();
@@ -2064,93 +2331,109 @@ public:
             error("Expected value");
             return std::nullopt;
         }
+
+        ExprElementType element_type;
+        bool is_term_signed;
+        SubExprElement lh_transit_element; //doesnt matter if its set while not-initialized it wont be used
+        SubExprElement rh_transit_element;
         
         switch (token.value().type) {
             case TokenType::U_INT_LIT:
             {
                 std::optional<NodeTermIntLit*> int_lit = invoke_parse_int_lit<unsigned int>(allowed_type, op_type, token.value());
-                if (!int_lit.has_value()) {
+                if (!int_lit.has_value() && !check_type(VarType::INT_32, false, allowed_type)) {
                     return std::nullopt;
                 }
                 term->var = int_lit.value();
                 element_type = ExprElementType::IMMEDIATE;
+                is_term_signed = false;
                 break;
             }
             case TokenType::U_LONG_LIT:
             {
-                if (allowed_type != VarType::INT_64) {
-                    error("Long literal used in 32 bit expression");
-                    return std::nullopt;
-                }
                 std::optional<NodeTermIntLit*> int_lit = invoke_parse_int_lit<unsigned long>(allowed_type, op_type, token.value());
-                if (!int_lit.has_value()) {
+                if (!int_lit.has_value() && !check_type(VarType::INT_64, false, allowed_type)) {
                     return std::nullopt;
                 }
                 term->var = int_lit.value();
                 element_type = ExprElementType::IMMEDIATE;
+                is_term_signed = false;
                 break;
             }
             case TokenType::FLOAT_LIT:
             case TokenType::N_FLOAT_LIT:
             {
-                if (allowed_type != VarType::FLOAT && allowed_type != VarType::DOUBLE) {
-                    error("Float literal used in integer expression");
-                    return std::nullopt;
-                }
                 std::optional<NodeTermIntLit*> int_lit;
                 if (allowed_type == VarType::DOUBLE) {
                     int_lit = parse_int_lit<double>(op_type, token.value());
+                    if (!check_type(VarType::DOUBLE, true, allowed_type)) {
+                        return std::nullopt;
+                    }
                 } else {
                     int_lit = parse_int_lit<float>(op_type, token.value());
+                    if (!check_type(VarType::FLOAT, true, allowed_type)) {
+                        return std::nullopt;
+                    }
                 }
                 if (!int_lit.has_value()) {
                     return std::nullopt;
                 }
                 term->var = int_lit.value();
                 element_type = ExprElementType::IMMEDIATE;
+                is_term_signed = true;
                 break;
             }
             case TokenType::INT_LIT:
             case TokenType::N_INT_LIT:
             {
                 std::optional<NodeTermIntLit*> int_lit;
-                if (allowed_type == VarType::INT_32 || allowed_type == VarType::UNKNOWN) {
-                    if (is_signed) {
-                        int_lit = invoke_parse_int_lit<signed int>(allowed_type, op_type, token.value());
-                    } else {
-                        int_lit = invoke_parse_int_lit<unsigned int>(allowed_type, op_type, token.value());
-                    }
-                } else if (allowed_type == VarType::INT_64) {
-                    if (is_signed) {
-                        int_lit = invoke_parse_int_lit<signed long>(allowed_type, op_type, token.value());
-                    } else {
-                        int_lit = invoke_parse_int_lit<unsigned long>(allowed_type, op_type, token.value());
-                    }
-                } else if (allowed_type == VarType::FLOAT) {
-                    int_lit = invoke_parse_int_lit<float>(allowed_type, op_type, token.value());
-                } else if (allowed_type == VarType::DOUBLE) {
-                    int_lit = invoke_parse_int_lit<double>(allowed_type, op_type, token.value());
-                } else if (allowed_type == VarType::INT_16) {
-                    if (is_signed) {
-                        int_lit = invoke_parse_int_lit<signed short>(allowed_type, op_type, token.value());
-                    } else {
-                        int_lit = invoke_parse_int_lit<unsigned short>(allowed_type, op_type, token.value());
-                    }
-                } else if (allowed_type == VarType::BYTE || allowed_type == VarType::BOOL) {
-                    if (is_signed) {
-                        int_lit = invoke_parse_int_lit<signed char>(allowed_type, op_type, token.value());
-                    } else {
-                        int_lit = invoke_parse_int_lit<unsigned char>(allowed_type, op_type, token.value());
-                    }
-                } else {
-                    error("Something went wrong with start getting int token");
-                    return std::nullopt;
+                switch (allowed_type) {
+                    case VarType::INT_32:
+                    case VarType::UNKNOWN:
+                        if (is_signed) {
+                            int_lit = invoke_parse_int_lit<signed int>(allowed_type, op_type, token.value());
+                        } else {
+                            int_lit = invoke_parse_int_lit<unsigned int>(allowed_type, op_type, token.value());
+                        }
+                        break;
+                    case VarType::INT_64:
+                        if (is_signed) {
+                            int_lit = invoke_parse_int_lit<signed long>(allowed_type, op_type, token.value());
+                        } else {
+                            int_lit = invoke_parse_int_lit<unsigned long>(allowed_type, op_type, token.value());
+                        }
+                        break;
+                    case VarType::FLOAT:
+                        int_lit = invoke_parse_int_lit<float>(allowed_type, op_type, token.value());
+                        break;
+                    case VarType::DOUBLE:
+                        int_lit = invoke_parse_int_lit<double>(allowed_type, op_type, token.value());
+                        break;
+                    case VarType::INT_16:
+                        if (is_signed) {
+                            int_lit = invoke_parse_int_lit<signed short>(allowed_type, op_type, token.value());
+                        } else {
+                            int_lit = invoke_parse_int_lit<unsigned short>(allowed_type, op_type, token.value());
+                        }
+                        break;
+                    case VarType::BYTE:
+                    case VarType::BOOL:
+                        if (is_signed) {
+                            int_lit = invoke_parse_int_lit<signed char>(allowed_type, op_type, token.value());
+                        } else {
+                            int_lit = invoke_parse_int_lit<unsigned char>(allowed_type, op_type, token.value());
+                        }
+                        break;
+                    default:
+                        error("Something went wrong with start getting int token");
+                        return std::nullopt;
                 }
                 if (!int_lit.has_value()) {
                     return std::nullopt;
                 }
                 term->var = int_lit.value();
                 element_type = ExprElementType::IMMEDIATE;
+                is_term_signed = is_signed;
                 break;
             }
             case TokenType::LONG_LIT:
@@ -2161,11 +2444,12 @@ public:
                     return std::nullopt;
                 }
                 std::optional<NodeTermIntLit*> int_lit = invoke_parse_int_lit<long>(allowed_type, op_type, token.value());
-                if (!int_lit.has_value()) {
+                if (!int_lit.has_value() && !check_type(VarType::INT_64, true, allowed_type)) {
                     return std::nullopt;
                 }
                 term->var = int_lit.value();
                 element_type = ExprElementType::IMMEDIATE;
+                is_term_signed = true;
                 break;
             }
             case TokenType::IDENT:
@@ -2206,6 +2490,8 @@ public:
 
                 is_cur_expr_dynamic = true;
 
+                element_type = ExprElementType::MEMORY;
+                is_term_signed = var.is_signed;
                 term->var = ident;
                 break;
             }
@@ -2253,15 +2539,16 @@ public:
                             return std::nullopt;
                         }
 
-                        NodeExprCast* exprCast = allocator.allocate<NodeExprCast>();
+                        NodeExprCast* expr_cast = allocator.allocate<NodeExprCast>();
 
-                        exprCast->round_float = round_float;
+                        expr_cast->round_float = round_float;
                         
                         VarType new_allowed_type = VarType::UNKNOWN;
-                        std::optional<NodeTerm*> cast_term = parseTerm(new_allowed_type, element_type, expr_element, OperatorType::NONE);
+                        std::optional<TermOut> cast_term = parseTerm(new_allowed_type, expr_element, OperatorType::NONE);
                         if (!cast_term.has_value()) {
                             return std::nullopt;
                         }
+                        element_type = cast_term.value().element_type;
                         
                         // This is when an actual cast will happen, other situations will do nothing
                         switch (var_switch(m_decided_type.type, type.type)) {
@@ -2269,10 +2556,12 @@ public:
                             case var_switch(VarType::FLOAT, VarType::INT_16):
                             case var_switch(VarType::FLOAT, VarType::BYTE):
                             case var_switch(VarType::FLOAT, VarType::INT_64):
+                            case var_switch(VarType::FLOAT, VarType::DOUBLE):
                             case var_switch(VarType::DOUBLE, VarType::INT_32):
                             case var_switch(VarType::DOUBLE, VarType::INT_16):
                             case var_switch(VarType::DOUBLE, VarType::BYTE):
                             case var_switch(VarType::DOUBLE, VarType::INT_64): 
+                            case var_switch(VarType::DOUBLE, VarType::FLOAT):
                             case var_switch(VarType::INT_32, VarType::FLOAT):
                             case var_switch(VarType::INT_16, VarType::FLOAT):
                             case var_switch(VarType::BYTE, VarType::FLOAT):
@@ -2283,20 +2572,22 @@ public:
                             case var_switch(VarType::INT_32, VarType::INT_64):
                             case var_switch(VarType::INT_16, VarType::INT_64):
                             case var_switch(VarType::BYTE, VarType::INT_64):
-                            case var_switch(VarType::INT_64, VarType::BYTE):
                             case var_switch(VarType::INT_32, VarType::BOOL):
                             case var_switch(VarType::INT_16, VarType::BOOL):
                             case var_switch(VarType::BYTE, VarType::BOOL):
                             case var_switch(VarType::INT_64, VarType::BOOL):
                             case var_switch(VarType::FLOAT, VarType::BOOL):
                             case var_switch(VarType::DOUBLE, VarType::BOOL):
-                                m_is_casting = true;
-                                m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
+                                m_is_casting = 1;
+                                append_to_last_areg();
                                 element_type = ExprElementType::PAREN;
                         }
 
-                        exprCast->from_type = m_decided_type;
-                        exprCast->expr = cast_term.value();
+                        NodeExpr* term_holder = allocator.allocate<NodeExpr>();
+
+                        expr_cast->from_type = m_decided_type;
+                        term_holder->var = cast_term.value().term;
+                        expr_cast->expr = term_holder;
 
                         is_cur_expr_single = false;
                         allowed_type = type.type;
@@ -2305,28 +2596,29 @@ public:
 
                         NodeExpr* expr = allocator.allocate<NodeExpr>();
 
-                        expr->var = exprCast;
+                        expr->var = expr_cast;
                         paren->expr = expr;
                         paren->only_too_large_imm = false;
 
+                        is_term_signed = is_signed;
                         term->var = paren;
                         break;
                     }
                 }
 
-                m_last_main_reg_ops.push_back({std::pair<long, long>{m_expr_pos, 0}});
+                append_to_last_areg();
                 int prev_used_regs_ctr = m_used_regs_ctr;
                 m_used_regs_ctr++;
 
-                std::optional<NodeExpr*> paren_expr = parseExpr(allowed_type);
+                std::optional<ExprOut> paren_expr = parseExpr(allowed_type);
                 if (!paren_expr.has_value()) {
                     return std::nullopt;
                 }
 
-                expr_element = paren_expr.value();
+                expr_element = paren_expr.value().expr;
 
                 // if parse_expr only parses one term and ends in a paren this is still set to true afterward
-                if (is_expr_too_big_imm && !fits_in_immediate(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(paren_expr.value()->var)->var)->bin_num, m_cur_var_type)) {
+                if (is_expr_too_big_imm && !fits_in_immediate(std::get<NodeTermIntLit*>(std::get<NodeTerm*>(paren_expr.value().expr->var)->var)->bin_num, m_cur_var_type)) {
                     paren->only_too_large_imm = true;
                 }
 
@@ -2337,14 +2629,15 @@ public:
                 is_cur_expr_dynamic = true;
                 is_cur_expr_single = false; // not optimal but I dont think this will ever be important
 
-                // if a communitive operation expression was flipped then m_used_regs_ctr will stay the same
+                // if a commutative operation expression was flipped then m_used_regs_ctr will stay the same
                 update_extra_space(m_used_regs_ctr);
                 m_used_regs_ctr = prev_used_regs_ctr;
 
                 m_used_explicit_paren = true;
                 
                 element_type = ExprElementType::PAREN;
-                paren->expr = paren_expr.value();
+                is_term_signed = is_signed;
+                paren->expr = paren_expr.value().expr;
                 term->var = paren;
                 break;
             }
@@ -2355,6 +2648,8 @@ public:
                     error("Cannot use bitwise not operator in float expression");
                     return std::nullopt;
                 }
+
+                is_term_signed = is_signed;
                 
                 std::optional<Token> next_token = next(1);
                 bool _not = (token.value().type == TokenType::TILDE);
@@ -2362,15 +2657,16 @@ public:
                     if (next_token.value().type == TokenType::O_PAREN) {
                         if (is_paren_const()) {
                             m_index += 2;
-                            std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NONE);
+                            std::optional<TermOut> single_op_term = parseTerm(allowed_type, expr_element, OperatorType::NONE);
                             if (!single_op_term.has_value()) {
                                 return std::nullopt;
                             }
+                            element_type = single_op_term.value().element_type;
                             if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
                                 return std::nullopt;
                             }
                             // this is a bit of a workaround but it is the easiest way to do this.
-                            NodeTermIntLit* int_lit = std::get<NodeTermIntLit*>(single_op_term.value()->var);
+                            NodeTermIntLit* int_lit = std::get<NodeTermIntLit*>(single_op_term.value().term->var);
                             if (_not) {
                                 if (m_imm_size == 4) {
                                     int_lit->bin_num = ~int_lit->bin_num & 0xFFFFFFFF;
@@ -2388,8 +2684,12 @@ public:
                                 next_token.value().type == TokenType::FLOAT_LIT || next_token.value().type == TokenType::N_FLOAT_LIT ||
                                 next_token.value().type == TokenType::U_INT_LIT || next_token.value().type == TokenType::U_LONG_LIT) {
                         consume();
-                        std::optional<NodeTerm*> single_op_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
-                        NodeTermIntLit* int_lit = std::get<NodeTermIntLit*>(single_op_term.value()->var);
+                        std::optional<TermOut> single_op_term = parseTerm(allowed_type, expr_element, OperatorType::NOT);
+                        if (!single_op_term.has_value()) {
+                            return std::nullopt;
+                        }
+                        element_type = single_op_term.value().element_type;
+                        NodeTermIntLit* int_lit = std::get<NodeTermIntLit*>(single_op_term.value().term->var);
                         term->var = int_lit;
                         break;
                     }
@@ -2400,22 +2700,22 @@ public:
                 if (_not) {
                     NodeTermNotExpr* not_expr = allocator.allocate<NodeTermNotExpr>();
 
-                    std::optional<NodeTerm*> not_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
+                    std::optional<TermOut> not_term = parseTerm(allowed_type, expr_element, OperatorType::NOT);
                     if (!not_term.has_value()) {
                         return std::nullopt;
                     }
 
-                    not_expr->term = not_term.value();
+                    not_expr->term = not_term.value().term;
                     term->var = not_expr;
                 } else {
                     NodeTermNegExpr* neg_expr = allocator.allocate<NodeTermNegExpr>();
 
-                    std::optional<NodeTerm*> neg_term = parseTerm(allowed_type, element_type, expr_element, OperatorType::NOT);
+                    std::optional<TermOut> neg_term = parseTerm(allowed_type, expr_element, OperatorType::NOT);
                     if (!neg_term.has_value()) {
                         return std::nullopt;
                     }
 
-                    neg_expr->term = neg_term.value();
+                    neg_expr->term = neg_term.value().term;
                     term->var = neg_expr;
                 }
                 element_type = ExprElementType::PAREN;
@@ -2432,12 +2732,12 @@ public:
                     expect_paren = true;
                     consume();
                 }
-                std::optional<NodeExpr*> not_expr = parseExpr(allowed_type);
+                std::optional<ExprOut> not_expr = parseExpr(allowed_type);
                 if (!not_expr.has_value()) {
                     return std::nullopt;
                 }
 
-                expr_element = not_expr.value();
+                expr_element = not_expr.value().expr;
 
                 if (expect_paren) {
                     if (!expect(TokenType::C_PAREN, "Expected closed parenthesis")) {
@@ -2448,18 +2748,19 @@ public:
                 if (!m_elem_used_test) {
                     NodeExpr* expr = allocator.allocate<NodeExpr>();
                     NodeExprLog* log_expr = allocator.allocate<NodeExprLog>();
-                    // m_right element will be set to the element type of the final expression
+                    // m_right_element will be set to the element type of the final expression
                     NodeExprLogTest* log_test = allocator.allocate<NodeExprLogTest>(m_right_element.t, m_last_main_reg_ops, m_expr_pos);
 
-                    log_test->expr = not_expr.value();
+                    log_test->expr = not_expr.value().expr;
                     log_expr->var = log_test;
                     expr->var = log_expr;
-                    not_expr.value() = expr;
+                    not_expr.value().expr = expr;
                     m_elem_used_test = true;
                 }
 
                 element_type = ExprElementType::PAREN;
-                log_not_expr->expr = not_expr.value();
+                is_term_signed = is_signed;
+                log_not_expr->expr = not_expr.value().expr;
                 term->var = log_not_expr;
                 break;
             }
@@ -2468,7 +2769,9 @@ public:
                 return std::nullopt;
         }
 
-        return term;
+        return TermOut{.term = term, .element_type = element_type, .expr_element = 
+                        SubExprElement{.v = Variable{.type = allowed_type, 
+                        .is_signed = is_term_signed}, .e = expr_element}};
     }
 
     template <typename T>

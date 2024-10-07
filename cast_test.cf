@@ -1,0 +1,16 @@
+// both of these are broken
+{
+    int a = 3;
+    unsigned long b = 3;
+    float y = 4;
+    float y2 = 5;
+    double y3 = (a / (3f / b));
+    double b = (a * y) / (a * a / y + a - a);
+}
+{
+    int a = 3;
+    unsigned long b = 5;
+    float y = 4;
+    float y2 = (a + b);
+    double b = (a * y) / (a * a / y * 9 / 11 + a - a);
+}
