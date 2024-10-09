@@ -77,8 +77,7 @@ struct SubExprElement {
 // ExprElements are meant to skip parenthetical expressions while subexprelements are not
 struct ExprElement {
     ExprElementType t;
-    Variable v;
-    NodeExpr* e;
+    SubExprElement cur;
     SubExprElement lh;
     SubExprElement rh;
 };
@@ -556,9 +555,6 @@ private:
     int m_lock_main_reg = 0;
     ExprElement m_left_element;
     ExprElement m_right_element; 
-    Variable m_last_left_elem_var_type;
-    Variable m_last_right_elem_var_type;
-    bool m_used_explicit_paren = false;
     bool m_elem_used_test = false;
     bool m_use_if_test = false;
     bool m_in_if_stmt = false;
@@ -908,7 +904,7 @@ private:
     }
 
     // This function does lead to a slight excess in heap memory allocated but it is necessary to 
-    // conform to C++ type standards while using std::variant
+    // conform to C++ type standards while using std::variant //TODO: maybe could flip if possible but might just not be worth it
     template <typename T1, typename target_type>
     void switch_node_type(T1& parent, NodeExpr*& lh, NodeExpr*& rh) {
         target_type* new_struct = allocator.allocate<target_type>();
@@ -974,42 +970,42 @@ private:
                 // Floats are prioritized so that they are only floored at the end
                 if (element.lh.v.type == VarType::FLOAT || element.lh.v.type == VarType::DOUBLE) {
                     element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
-                    element.v = element.lh.v;
-                    switch_to_paren(element.e);
+                    element.cur.v = element.lh.v;
+                    switch_to_paren(element.cur.e);
                     return true;
                 } else if (element.rh.v.type == VarType::FLOAT || element.rh.v.type == VarType::DOUBLE) {
                     element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
-                    element.v = element.rh.v;
+                    element.cur.v = element.rh.v;
                     return false;
                 }
                 // Longs are prioritized so that information isnt lost until the end
                 if (element.lh.v.type == VarType::INT_64) {
                     element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
-                    element.v = element.lh.v;
-                    switch_to_paren(element.e);
+                    element.cur.v = element.lh.v;
+                    switch_to_paren(element.cur.e);
                     return true;
                 } else if (element.rh.v.type == VarType::INT_64) {
                     element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
-                    element.v = element.rh.v;
+                    element.cur.v = element.rh.v;
                     return false;
                 }
             }
 
-            element.v = adjacent_type;
+            element.cur.v = adjacent_type;
             if (element.lh.v.type != adjacent_type.type) {
                 element.lh.e->var = insert_cast(element.lh.e, element.lh.v);
             }
             if (element.rh.v.type != adjacent_type.type) {
                 element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
-                switch_to_paren(element.e);
+                switch_to_paren(element.cur.e);
                 return true;
             }
             return false;
         }
 
         if (element.lh.v.type != adjacent_type.type) {
-            element.e->var = insert_cast(element.e, element.lh.v);
-            element.v = adjacent_type;
+            element.cur.e->var = insert_cast(element.cur.e, element.lh.v);
+            element.cur.v = adjacent_type;
             return false;
         }
         // implicit signed casts, helps with optimization
@@ -1020,7 +1016,7 @@ private:
             element.rh.e->var = insert_cast(element.rh.e, element.rh.v);
         }
         
-        element.v = Variable{.type = element.lh.v.type, .is_signed = adjacent_type.is_signed};
+        element.cur.v = Variable{.type = element.lh.v.type, .is_signed = adjacent_type.is_signed};
         return false;
     }
 
@@ -1032,7 +1028,7 @@ private:
         counts[static_cast<int>(m_right_element.lh.v.type)]++;
         counts[static_cast<int>(m_right_element.rh.v.type)]++;
 
-        auto most_common_index = std::distance(counts.begin(), std::max_element(counts.begin(), counts.end()));
+        auto most_common_index = std::distance(counts.begin(), std::max_element(counts.begin(), counts.end())); //!?!!!DASKJLDAJKL:SDJKL:ASJKL:DJKAL:S:DJLKA:JKLSDJ:KLA:KLJSDJL:KA:SKLJDKALSDJKL:AKLSDJKLASD
 
         Variable most_common = Variable{static_cast<VarType>(most_common_index), is_signed};
 
@@ -1045,10 +1041,10 @@ private:
             if (m_right_element.t == ExprElementType::PAREN) {
                 return insert_implicit_casts_doub_par();
             } else {
-                return insert_implicit_casts_single(m_left_element, m_right_element.v);
+                return insert_implicit_casts_single(m_left_element, m_right_element.cur.v);
             }
         } else if (m_right_element.t == ExprElementType::PAREN) {
-            return insert_implicit_casts_single(m_right_element, m_left_element.v);
+            return insert_implicit_casts_single(m_right_element, m_left_element.cur.v);
         }
 
         return false;
@@ -1061,8 +1057,8 @@ private:
                     update_areg_val(final_expr, 1);
                 }
             }
-        } else if (m_right_element.v.type != m_orig_allowed_type.type || m_right_element.v.is_signed != m_orig_allowed_type.is_signed) {
-            m_right_element.e->var = insert_cast(m_right_element.e, m_right_element.v);
+        } else if (m_right_element.cur.v.type != m_orig_allowed_type.type || m_right_element.cur.v.is_signed != m_orig_allowed_type.is_signed) {
+            m_right_element.cur.e->var = insert_cast(m_right_element.cur.e, m_right_element.cur.v);
         }
     }
 
@@ -1145,21 +1141,23 @@ private:
     }
 
     inline void update_rh_elem_full(ExprElementType type, Variable var_type, SubExprElement lh, SubExprElement rh, NodeExpr* expr) {
-        m_right_element.lh = lh;
-        m_right_element.rh = rh;
+        m_right_element.lh.e = lh.e;
+        m_right_element.lh.v = m_left_element.cur.v;
+        m_right_element.rh.e = rh.e;
+        m_right_element.rh.v = m_right_element.cur.v;
         m_right_element.t = type;
-        m_right_element.v = var_type;
-        m_right_element.e = expr;
+        m_right_element.cur.v = var_type;
+        m_right_element.cur.e = expr;
     }
 
     inline void update_lh_elem_type(ExprElementType type, NodeExpr* expr) {
         m_left_element.t = type;
-        m_left_element.e = expr;
+        m_left_element.cur.e = expr;
     }
 
     inline void update_rh_elem_type(ExprElementType type, NodeExpr* expr) {
         m_right_element.t = type;
-        m_right_element.e = expr;
+        m_right_element.cur.e = expr;
     }
 
     void update_extra_space(int num) {
@@ -1799,15 +1797,17 @@ public:
     // Most of the parser's important parts are in this function, parseExpr handles all mathmatical expressons,
     // if statements, optimization of commutative operations, and splitting expressions into two parts if more
     // memory would be required to normally compute them
-    std::optional<ExprOut> parseExpr(VarType allowed_type, u_int8_t min_prec = 0, OperatorType op_type = OperatorType::NONE) { 
+    std::optional<ExprOut> parseExpr(VarType allowed_type, bool new_paren = false, u_int8_t min_prec = 0, OperatorType op_type = OperatorType::NONE) { 
         NodeExpr* expr = allocator.allocate<NodeExpr>();
         SubExprElement expr_element;
+        SubExprElement lh_sub_lh;
+        SubExprElement lh_sub_rh;
         bool full_expr = false;
         bool used_two_part = false;
         long lh_by_parens = 0;
         int two_parts = -1;
                               
-        std::optional<TermOut> term_out = parseTerm(allowed_type, expr, op_type);
+        std::optional<TermOut> term_out = parseTerm(allowed_type, expr, op_type, min_prec);
         if (!term_out.has_value()) {
             return std::nullopt;
         }
@@ -1815,6 +1815,8 @@ public:
         TermOut lh = term_out.value();
         std::optional<ExprOut> rh_expr = ExprOut{};
 
+        lh_sub_lh = m_left_element.cur;
+        lh_sub_rh = m_right_element.rh;
         expr->var = lh.term;
         expr_element = lh.expr_element;
 
@@ -1827,24 +1829,23 @@ public:
             OperatorType op_type;
             u_int8_t prec = op_prec_and_type(next_token.value().type, op_type);
             if (prec == 255) {
-                if (!m_used_explicit_paren) {
-                    update_rh_elem_full(lh.element_type, lh.expr_element.v, lh.expr_element, rh_expr.value().expr_element, expr_element.e);
-                }
                 if (next_token.value().type != TokenType::C_PAREN && next_token.value().type != TokenType::SEMI) {
                     error("Bad operator or missing semicolon");
                     return std::nullopt;
+                }
+                if (full_expr || (!full_expr && lh.element_type != ExprElementType::PAREN)) {
+                    update_rh_elem_full(lh.element_type, expr_element.v, expr_element, rh_expr.value().expr_element, expr_element.e);
                 }
                 if (!full_expr) { // Necessary for too big imm and casting
                     return ExprOut{.expr = expr, .expr_element = expr_element};
                 }
                 break;
-            } else if (prec >= min_prec && min_prec != 0 && !full_expr && !m_used_explicit_paren) {
+            } else if (new_paren || (prec >= min_prec && min_prec != 0 && !full_expr)) {
                 append_to_last_areg();
             }
-            m_used_explicit_paren = false;
 
             if (prec < min_prec) {
-                update_rh_elem_full(lh.element_type, lh.expr_element.v, lh.expr_element, rh_expr.value().expr_element, lh.expr_element.e); //TODO
+                update_rh_elem_full(lh.element_type, expr_element.v, expr_element, rh_expr.value().expr_element, lh.expr_element.e); //TODO
                 break;
             }
 
@@ -1852,7 +1853,7 @@ public:
             m_elem_used_test = false; 
 
             consume();
-            rh_expr = parseExpr(allowed_type, prec + 1, op_type);
+            rh_expr = parseExpr(allowed_type, false, prec + 1, op_type);
             if (!rh_expr.has_value()) {
                 successful = false;
                 return std::nullopt;
@@ -1899,9 +1900,9 @@ public:
             }
 
             lh.expr_element.e = expr_cpy;
-            m_left_element.lh = lh.expr_element;
-            m_left_element.rh = rh_expr.value().expr_element;
-            m_left_element.v = lh.expr_element.v;
+            m_left_element.cur.v = lh.expr_element.v;
+            m_left_element.lh = lh_sub_lh;
+            m_left_element.rh = lh_sub_rh;
 
             // there is a lot of convenient stuff with expression flipping that happens that allows
             // use_e to work in generate.hpp
@@ -2024,7 +2025,6 @@ public:
                     return std::nullopt;
             }
             
-            m_last_left_elem_var_type = m_left_element.v;
             expr_element.e = expr;
             update_lh_elem_type(ExprElementType::PAREN, lh.expr_element.e);
             full_expr = true;
@@ -2171,22 +2171,22 @@ public:
         if (m_right_element.t == ExprElementType::PAREN) {
             if (!(m_left_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) && m_left_element.t != ExprElementType::PAREN) {
                 std::swap(m_left_element, m_right_element);
-                return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
+                return makeLogExprS<T3>(rh, lh, m_right_element.cur.e, m_left_element.cur.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
-                return makeLogExprS<T2>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
+                return makeLogExprS<T2>(lh, rh, m_left_element.cur.e, m_right_element.cur.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
             }
         } else if (m_right_element.t == ExprElementType::IMMEDIATE && is_expr_too_big_imm) {
             if (m_left_element.t == ExprElementType::PAREN) {
                 std::swap(m_left_element, m_right_element);
-                return makeLogExprS<T2>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
+                return makeLogExprS<T2>(rh, lh, m_right_element.cur.e, m_left_element.cur.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             } else {
-                return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
+                return makeLogExprS<T3>(rh, lh, m_right_element.cur.e, m_left_element.cur.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
             }
         } else if (m_left_element.t == ExprElementType::IMMEDIATE && m_right_element.t == ExprElementType::MEMORY) {
             std::swap(m_left_element, m_right_element);
-            return makeLogExprS<T3>(rh, lh, m_right_element.e, m_left_element.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
+            return makeLogExprS<T3>(rh, lh, m_right_element.cur.e, m_left_element.cur.e, rh_used_test, lh_used_test, m_right_element.t, m_left_element.t);
         } else {
-            return makeLogExprS<T>(lh, rh, m_left_element.e, m_right_element.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
+            return makeLogExprS<T>(lh, rh, m_left_element.cur.e, m_right_element.cur.e, lh_used_test, rh_used_test, m_left_element.t, m_right_element.t);
         }   
     }
 
@@ -2322,7 +2322,7 @@ public:
     }
 
     // allowed_type and expr_element should be copied
-    std::optional<TermOut> parseTerm(VarType& allowed_type, NodeExpr* expr_element, const OperatorType& op_type) {
+    std::optional<TermOut> parseTerm(VarType& allowed_type, NodeExpr* expr_element, const OperatorType& op_type, u_int8_t expr_min_prec = 0) {
         NodeTerm* term = allocator.allocate<NodeTerm>();
 
         std::optional<Token> token = next();
@@ -2610,7 +2610,7 @@ public:
                 int prev_used_regs_ctr = m_used_regs_ctr;
                 m_used_regs_ctr++;
 
-                std::optional<ExprOut> paren_expr = parseExpr(allowed_type);
+                std::optional<ExprOut> paren_expr = parseExpr(allowed_type, expr_min_prec);
                 if (!paren_expr.has_value()) {
                     return std::nullopt;
                 }
@@ -2632,8 +2632,6 @@ public:
                 // if a commutative operation expression was flipped then m_used_regs_ctr will stay the same
                 update_extra_space(m_used_regs_ctr);
                 m_used_regs_ctr = prev_used_regs_ctr;
-
-                m_used_explicit_paren = true;
                 
                 element_type = ExprElementType::PAREN;
                 is_term_signed = is_signed;
@@ -2732,7 +2730,7 @@ public:
                     expect_paren = true;
                     consume();
                 }
-                std::optional<ExprOut> not_expr = parseExpr(allowed_type);
+                std::optional<ExprOut> not_expr = parseExpr(allowed_type, expr_min_prec);
                 if (!not_expr.has_value()) {
                     return std::nullopt;
                 }

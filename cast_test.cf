@@ -4,7 +4,7 @@
     unsigned long b = 3;
     float y = 4;
     float y2 = 5;
-    double y3 = (a / (3f / b));
+    //double y3 = (a / (3f / b));
     double b = (a * y) / (a * a / y + a - a);
 }
 {
