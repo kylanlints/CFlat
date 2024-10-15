@@ -1,4 +1,4 @@
-# Install script for directory: /root/Prog/CFlat/include
+# Install script for directory: /home/kplints/Prog/CFlat/include
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

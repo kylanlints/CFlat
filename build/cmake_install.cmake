@@ -1,4 +1,4 @@
-# Install script for directory: /root/Prog/CFlat
+# Install script for directory: /home/kplints/Prog/CFlat
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/root/Prog/CFlat/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/kplints/Prog/CFlat/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

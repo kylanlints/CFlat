@@ -1004,7 +1004,12 @@ private:
             }
             return false;
         }
-        // ! CHECK FLOAT TYPE
+        
+        if ((element.lh.v.type == VarType::FLOAT && adjacent_type.type != VarType::DOUBLE) || element.lh.v.type == VarType::DOUBLE) {
+            element.cur.v.type = element.lh.v.type;
+            return false;
+        }
+
         if (element.lh.v.type != adjacent_type.type) {
             element.cur.e->var = insert_cast(element.cur.e, element.lh.v);
             element.cur.v = adjacent_type;

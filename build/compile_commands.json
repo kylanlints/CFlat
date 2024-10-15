@@ -1,7 +1,8 @@
 [
 {
-  "directory": "/root/Prog/CFlat/build",
-  "command": "/usr/bin/g++ -DFMT_HEADER_ONLY=1  -g -std=gnu++20 -o CMakeFiles/cf.dir/src/main.cpp.o -c /root/Prog/CFlat/src/main.cpp",
-  "file": "/root/Prog/CFlat/src/main.cpp"
+  "directory": "/home/kplints/Prog/CFlat/build",
+  "command": "/usr/bin/g++ -DFMT_HEADER_ONLY=1  -g -std=gnu++20 -o CMakeFiles/cf.dir/src/main.cpp.o -c /home/kplints/Prog/CFlat/src/main.cpp",
+  "file": "/home/kplints/Prog/CFlat/src/main.cpp",
+  "output": "CMakeFiles/cf.dir/src/main.cpp.o"
 }
 ]
