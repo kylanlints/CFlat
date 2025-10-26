@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/root/Prog/CFlat/build",
-  "command": "/usr/bin/g++ -DFMT_HEADER_ONLY=1  -g -std=gnu++20 -o CMakeFiles/cf.dir/src/main.cpp.o -c /root/Prog/CFlat/src/main.cpp",
-  "file": "/root/Prog/CFlat/src/main.cpp"
-}
-]
